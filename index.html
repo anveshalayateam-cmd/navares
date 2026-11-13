@@ -2,21 +2,24 @@
 <html lang="en" class="dark">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    />
     <title>ARES NAV // Martian Survival &amp; Exploration Map</title>
     <meta
       name="description"
-      content="Interactive 3D Mars Explorer and Interplanetary Survival Guide built with CesiumJS and NASA Mars Trek WMTS imagery."
+      content="Minimalist 3D Mars Explorer modeled after Google Earth using CesiumJS and NASA Mars Trek WMTS imagery."
     />
     <meta property="og:title" content="ARES NAV // Martian Survival & Exploration Map" />
     <meta
       property="og:description"
-      content="Interactive 3D Mars Explorer and Interplanetary Survival Guide built with CesiumJS and NASA Mars Trek WMTS imagery."
+      content="Minimalist 3D Mars Explorer modeled after Google Earth using CesiumJS and NASA Mars Trek WMTS imagery."
     />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
 
-    <!-- Aerospace Display, Technical Sans & Monospace Fonts -->
+    <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -24,14 +27,14 @@
       rel="stylesheet"
     />
 
-    <!-- CesiumJS v1.124 CDN Assets -->
+    <!-- CesiumJS v1.124 CDN -->
     <link
       href="https://cesium.com/downloads/cesiumjs/releases/1.124/Build/Cesium/Widgets/widgets.css"
       rel="stylesheet"
     />
     <script src="https://cesium.com/downloads/cesiumjs/releases/1.124/Build/Cesium/Cesium.js"></script>
   </head>
-  <body class="bg-[#05070B] text-slate-100 antialiased overflow-hidden select-none">
+  <body class="bg-black text-slate-100 antialiased overflow-hidden select-none">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

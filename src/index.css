@@ -16,8 +16,9 @@
     margin: 0;
     padding: 0;
     overflow: hidden;
-    background-color: #05070b;
+    background-color: #000000;
     font-family: var(--font-sans);
+    overscroll-behavior: none;
   }
 }
 
@@ -30,7 +31,6 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Custom sleek dark scrollbar for sidebar & info panels */
 .hud-scroll::-webkit-scrollbar {
   width: 5px;
 }
@@ -40,21 +40,18 @@
 }
 
 .hud-scroll::-webkit-scrollbar-thumb {
-  background: rgba(148, 163, 184, 0.22);
+  background: rgba(148, 163, 184, 0.25);
   border-radius: 9999px;
 }
 
-.hud-scroll::-webkit-scrollbar-thumb:hover {
-  background: rgba(148, 163, 184, 0.4);
-}
-
-/* CesiumJS container & subtle credit bar integration */
+#cesiumContainer,
 .cesium-viewer,
 .cesium-viewer-cesiumWidgetContainer,
 .cesium-widget,
 .cesium-widget canvas {
   width: 100% !important;
   height: 100% !important;
+  touch-action: none !important;
 }
 
 .cesium-viewer-bottom {

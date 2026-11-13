@@ -3,7 +3,9 @@
 export interface CesiumEntity {
   id: string;
   name?: string;
-  position?: unknown;
+  position?: {
+    getValue?: (time: unknown) => unknown;
+  };
   billboard?: unknown;
   label?: unknown;
   polyline?: unknown;
@@ -16,6 +18,10 @@ export interface CesiumEntity {
 export interface CesiumImageryLayer {
   show: boolean;
   alpha: number;
+  contrast: number;
+  brightness: number;
+  gamma: number;
+  saturation: number;
   imageryProvider: {
     errorEvent?: {
       addEventListener: (cb: (err: unknown) => void) => () => void;
@@ -24,10 +30,17 @@ export interface CesiumImageryLayer {
 }
 
 export interface CesiumViewer {
+  trackedEntity?: CesiumEntity;
+  cesiumWidget: {
+    screenSpaceEventHandler: {
+      removeInputAction: (type: unknown, modifier?: unknown) => void;
+    };
+  };
   scene: {
     globe: {
       baseColor: unknown;
       enableLighting: boolean;
+      showGroundAtmosphere: boolean;
       atmosphereLightIntensity: number;
       depthTestAgainstTerrain: boolean;
       material?: unknown;
@@ -40,6 +53,25 @@ export interface CesiumViewer {
       saturationShift: number;
       brightnessShift: number;
     };
+    screenSpaceCameraController: {
+      enableCollisionDetection: boolean;
+      minimumZoomDistance: number;
+      maximumZoomDistance: number;
+      enableZoom: boolean;
+      enableRotate: boolean;
+      enableTilt: boolean;
+      enableTranslate: boolean;
+      zoomFactor?: number;
+      zoomEventTypes: unknown[];
+      tiltEventTypes: unknown[];
+    };
+    preRender: {
+      addEventListener: (cb: () => void) => () => void;
+    };
+    postRender: {
+      addEventListener: (cb: () => void) => () => void;
+    };
+    highDynamicRange: boolean;
     sun?: unknown;
     moon?: unknown;
     backgroundColor: unknown;
@@ -50,12 +82,22 @@ export interface CesiumViewer {
   };
   camera: {
     position: unknown;
+    positionWC: unknown;
+    heading: number;
+    pitch: number;
+    roll: number;
     positionCartographic: {
       latitude: number;
       longitude: number;
       height: number;
     };
     flyTo: (options: Record<string, unknown>) => void;
+    cancelFlight: () => void;
+    setView: (options: Record<string, unknown>) => void;
+    moveForward: (amount?: number) => void;
+    moveBackward: (amount?: number) => void;
+    zoomIn: (amount?: number) => void;
+    zoomOut: (amount?: number) => void;
     pickEllipsoid: (windowPosition: unknown, ellipsoid: unknown) => unknown;
   };
   entities: {

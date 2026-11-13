@@ -1,0 +1,148 @@
+import { CloudSun } from 'lucide-react';
+
+export type MapStyleMode = 'optical' | 'temperature' | 'radiation' | 'elevation';
+
+interface MapStyleBarProps {
+  mapStyle: MapStyleMode;
+  onChangeMapStyle: (style: MapStyleMode) => void;
+  weatherEnabled: boolean;
+  onToggleWeather: () => void;
+}
+
+const STYLE_OPTIONS: Array<{ id: MapStyleMode; label: string; title: string }> = [
+  { id: 'optical', label: 'Optical', title: 'NASA Viking 232m Natural Color + MRO CTX Detail' },
+  { id: 'temperature', label: 'Temperature', title: 'Global Martian Surface Temperature (Rainbow Thermal Scale)' },
+  { id: 'radiation', label: 'Radiation', title: 'MSL RAD Calibrated Surface Radiation Levels' },
+  { id: 'elevation', label: 'Elevation', title: 'MOLA Grayscale Elevation (Black = Lowest, White = Highest)' },
+];
+
+export function MapStyleBar({
+  mapStyle,
+  onChangeMapStyle,
+  weatherEnabled,
+  onToggleWeather,
+}: MapStyleBarProps) {
+  return (
+    <div className="pointer-events-none fixed bottom-5 left-1/2 -translate-x-1/2 z-20 flex flex-col items-center gap-2.5 max-w-[calc(100vw-2rem)]">
+      {/* Temperature Rainbow Scale Legend */}
+      {mapStyle === 'temperature' && (
+        <div className="pointer-events-auto flex flex-col gap-1.5 rounded-2xl border border-white/15 bg-[#0B0F17]/86 px-4 py-2 backdrop-blur-md shadow-2xl">
+          <div
+            aria-label="Temperature scale from -125°C violet/blue to +20°C red"
+            className="h-2.5 w-64 sm:w-80 rounded-full border border-white/15"
+            style={{
+              background:
+                'linear-gradient(90deg, #1a0066 0%, #0044ff 18%, #00e5ff 35%, #00e640 54%, #ffe600 70%, #ff6600 86%, #ff0000 100%)',
+            }}
+          />
+          <div className="flex items-center justify-between gap-2 font-mono-tabular text-[10px] sm:text-[11px] text-slate-200 whitespace-nowrap">
+            <span className="text-indigo-300">-125°C</span>
+            <span className="text-cyan-300">-75°C</span>
+            <span className="text-emerald-300">-30°C</span>
+            <span className="text-orange-400">0°C</span>
+            <span className="text-red-400 font-semibold">+20°C</span>
+          </div>
+        </div>
+      )}
+
+      {/* Radiation Dose Legend (MSL RAD Calibrated) */}
+      {mapStyle === 'radiation' && (
+        <div className="pointer-events-auto flex flex-wrap items-center justify-center gap-2.5 rounded-full border border-[#00FF41]/35 bg-[#050806]/88 px-4 py-1.5 backdrop-blur-md shadow-2xl">
+          <span className="text-[11px] font-medium text-slate-200 whitespace-nowrap">
+            Radiation Dose (MSL RAD Calibrated):
+          </span>
+          <span className="font-mono-tabular text-[11px] text-slate-300 whitespace-nowrap">
+            0.2 mSv/day (Sheltered / Black)
+          </span>
+          <div
+            aria-label="Radiation scale from 0.2 mSv/day sheltered black to 1.2+ mSv/day high exposure bright green"
+            className="h-2.5 w-32 sm:w-44 rounded-full border border-white/15"
+            style={{
+              background:
+                'linear-gradient(90deg, #000000 0%, #001a05 22%, #008f11 55%, #00ff41 85%, #7dff9b 100%)',
+            }}
+          />
+          <span className="font-mono-tabular text-[11px] font-semibold text-[#00FF41] whitespace-nowrap">
+            1.2+ mSv/day (High Exposure / Bright Green)
+          </span>
+        </div>
+      )}
+
+      {/* Elevation Grayscale Legend (Black = Lowest -> Mid Gray -> White = Highest) */}
+      {mapStyle === 'elevation' && (
+        <div className="pointer-events-auto flex flex-wrap items-center justify-center gap-2.5 rounded-full border border-white/15 bg-[#0B0F17]/86 px-4 py-1.5 backdrop-blur-md shadow-2xl">
+          <span className="font-mono-tabular text-[11px] text-slate-300 whitespace-nowrap">
+            -8 km (Black / Lowest)
+          </span>
+          <div
+            aria-label="Grayscale elevation scale from -8 km black to +21 km white"
+            className="h-2.5 w-32 sm:w-44 rounded-full border border-white/20"
+            style={{
+              background: 'linear-gradient(90deg, #000000 0%, #808080 50%, #ffffff 100%)',
+            }}
+          />
+          <span className="font-mono-tabular text-[11px] text-slate-300 whitespace-nowrap">
+            0 km (Mid Gray)
+          </span>
+          <span className="text-slate-600" aria-hidden="true">
+            ·
+          </span>
+          <span className="font-mono-tabular text-[11px] font-semibold text-white whitespace-nowrap">
+            +21 km (White / Highest)
+          </span>
+        </div>
+      )}
+
+      {/* Map Style Segmented Pill + Separate Weather Toggle Pill */}
+      <div className="pointer-events-auto flex flex-wrap items-center justify-center gap-2">
+        <div
+          role="radiogroup"
+          aria-label="Mars base imagery layer"
+          className="flex items-center gap-1 rounded-full border border-white/15 bg-[#0B0F17]/82 p-1 backdrop-blur-md shadow-2xl"
+        >
+          {STYLE_OPTIONS.map((opt) => {
+            const active = mapStyle === opt.id;
+            const isRadiationActive = active && opt.id === 'radiation';
+            return (
+              <button
+                key={opt.id}
+                type="button"
+                role="radio"
+                aria-checked={active}
+                title={opt.title}
+                onClick={() => onChangeMapStyle(opt.id)}
+                className={`rounded-full px-3.5 py-1.5 text-xs font-medium transition-colors duration-150 whitespace-nowrap shrink-0 cursor-pointer ${
+                  isRadiationActive
+                    ? 'bg-[#00FF41] text-black shadow-sm font-semibold'
+                    : active
+                      ? 'bg-white text-slate-950 shadow-sm font-semibold'
+                      : 'text-slate-300 hover:text-white hover:bg-white/10'
+                }`}
+              >
+                {opt.label}
+              </button>
+            );
+          })}
+        </div>
+
+        <button
+          type="button"
+          aria-pressed={weatherEnabled}
+          onClick={onToggleWeather}
+          className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-xs font-medium backdrop-blur-md shadow-2xl transition-colors duration-150 whitespace-nowrap shrink-0 cursor-pointer ${
+            weatherEnabled
+              ? 'border-cyan-400/50 bg-cyan-500/20 text-cyan-200'
+              : 'border-white/15 bg-[#0B0F17]/82 text-slate-300 hover:text-white hover:bg-[#0B0F17]'
+          }`}
+          title="Toggle live Martian surface weather telemetry badges"
+        >
+          <CloudSun
+            className={`h-3.5 w-3.5 ${weatherEnabled ? 'text-cyan-300' : 'text-slate-400'}`}
+            aria-hidden="true"
+          />
+          <span>Weather: {weatherEnabled ? 'ON' : 'OFF'}</span>
+        </button>
+      </div>
+    </div>
+  );
+}
