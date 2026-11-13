@@ -1,0 +1,6 @@
+{
+  "name": "ARES NAV // Martian Survival & Exploration Map",
+  "description": "Interactive 3D Mars Explorer and Interplanetary Survival Guide built with CesiumJS and NASA Mars Trek WMTS imagery.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
