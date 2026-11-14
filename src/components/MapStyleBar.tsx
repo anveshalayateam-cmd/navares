@@ -1,4 +1,4 @@
-import { CloudSun, Mountain } from 'lucide-react';
+import { CloudSun, Grid3X3, Mountain } from 'lucide-react';
 import { MARS_TEMPERATURE_GRADIENT_CSS } from '../utils/marsOverlayMaps';
 
 export type MapStyleMode = 'optical' | 'temperature' | 'radiation' | 'elevation';
@@ -9,6 +9,8 @@ interface MapStyleBarProps {
   onChangeMapStyle: (style: MapStyleMode) => void;
   reliefMode: ReliefMode;
   onCycleReliefMode: () => void;
+  gridEnabled: boolean;
+  onToggleGrid: () => void;
   weatherEnabled: boolean;
   onToggleWeather: () => void;
 }
@@ -25,11 +27,13 @@ export function MapStyleBar({
   onChangeMapStyle,
   reliefMode,
   onCycleReliefMode,
+  gridEnabled,
+  onToggleGrid,
   weatherEnabled,
   onToggleWeather,
 }: MapStyleBarProps) {
   return (
-    <div className="pointer-events-none fixed bottom-5 left-1/2 -translate-x-1/2 z-20 flex flex-col items-center gap-2.5 max-w-[calc(100vw-2rem)]">
+    <div className="pointer-events-none fixed bottom-14 left-1/2 -translate-x-1/2 z-20 flex flex-col items-center gap-2.5 max-w-[calc(100vw-2rem)]">
       {/* Temperature Rainbow Scale Legend */}
       {mapStyle === 'temperature' && (
         <div className="pointer-events-auto flex flex-col gap-1.5 rounded-2xl border border-white/15 bg-[#0B0F17]/86 px-4 py-2 backdrop-blur-md shadow-2xl">
@@ -151,6 +155,21 @@ export function MapStyleBar({
         >
           <Mountain className="h-3.5 w-3.5 text-orange-300" aria-hidden="true" />
           <span>3D Relief: {reliefMode === 'default' ? '2.2x' : reliefMode === 'off' ? 'Off' : reliefMode}</span>
+        </button>
+
+        <button
+          type="button"
+          aria-pressed={gridEnabled}
+          onClick={onToggleGrid}
+          className={`inline-flex items-center gap-2 rounded-full border px-3.5 py-2 text-xs font-medium backdrop-blur-md shadow-2xl transition-colors duration-150 whitespace-nowrap shrink-0 cursor-pointer ${
+            gridEnabled
+              ? 'border-cyan-300/45 bg-cyan-400/15 text-cyan-100'
+              : 'border-white/15 bg-[#0B0F17]/82 text-slate-300 hover:text-white hover:bg-[#0B0F17]'
+          }`}
+          title="Show or hide 15° latitude and longitude graticule lines"
+        >
+          <Grid3X3 className={`h-3.5 w-3.5 ${gridEnabled ? 'text-cyan-300' : 'text-slate-400'}`} aria-hidden="true" />
+          <span>Grid (Lat/Lon): {gridEnabled ? 'ON' : 'OFF'}</span>
         </button>
 
         <button

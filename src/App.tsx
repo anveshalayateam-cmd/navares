@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { CursorTelemetry, CursorTelemetryPill } from './components/CursorTelemetryPill';
+import { CameraTelemetry, CursorTelemetry, CursorTelemetryPill } from './components/CursorTelemetryPill';
 import { InfoMenu } from './components/InfoMenu';
 import { MapStyleBar, MapStyleMode, ReliefMode } from './components/MapStyleBar';
 import {
@@ -32,6 +32,9 @@ export default function App() {
   const [reliefMode, setReliefMode] = useState<ReliefMode>('default');
   const [telemetryMode, setTelemetryMode] = useState<TelemetryMode>('realtime');
   const [headingRad, setHeadingRad] = useState<number>(0);
+  const [cameraTelemetry, setCameraTelemetry] = useState<CameraTelemetry | null>(null);
+  const [sunShadowEnabled, setSunShadowEnabled] = useState<boolean>(true);
+  const [gridEnabled, setGridEnabled] = useState<boolean>(false);
 
   const [weatherEnabled, setWeatherEnabled] = useState<boolean>(false);
   const [weatherStations, setWeatherStations] = useState<MarsWeatherStation[]>(
@@ -156,6 +159,8 @@ export default function App() {
         selectedTargetId={selectedTarget?.id ?? null}
         mapStyle={mapStyle}
         reliefMode={reliefMode}
+        sunShadowEnabled={sunShadowEnabled}
+        gridEnabled={gridEnabled}
         telemetryMode={telemetryMode}
         weatherEnabled={weatherEnabled}
         measureMode={measureMode}
@@ -164,6 +169,7 @@ export default function App() {
         onHeadingChange={setHeadingRad}
         onLiveSatellitesUpdate={setLiveSatellites}
         onCursorTelemetryChange={setCursorTelemetry}
+        onCameraTelemetryChange={setCameraTelemetry}
         onMeasureHasPointAChange={setMeasureHasPointA}
         onMeasureLivePreviewChange={setMeasureLivePreview}
         onMeasureResultChange={setMeasureResult}
@@ -194,7 +200,7 @@ export default function App() {
       />
 
       {/* Bottom-Left Real-Time Cursor Surface Coordinates & Elevation Telemetry Pill */}
-      <CursorTelemetryPill telemetry={cursorTelemetry} />
+      <CursorTelemetryPill telemetry={cursorTelemetry} cameraTelemetry={cameraTelemetry} />
 
       {/* Control 2: Bottom-Center Google Earth-Style Map Style Switcher & Weather Toggle */}
       <MapStyleBar
@@ -202,6 +208,8 @@ export default function App() {
         onChangeMapStyle={setMapStyle}
         reliefMode={reliefMode}
         onCycleReliefMode={handleCycleReliefMode}
+        gridEnabled={gridEnabled}
+        onToggleGrid={() => setGridEnabled((enabled) => !enabled)}
         weatherEnabled={weatherEnabled}
         onToggleWeather={() => setWeatherEnabled((prev) => !prev)}
       />
@@ -209,14 +217,19 @@ export default function App() {
       {/* Control 3: Bottom-Right Compact Navigation Controls (Route, Measure, Compass, Globe Reset, +, -) */}
       <NavControls
         headingRad={headingRad}
+        tiltDeg={cameraTelemetry?.tiltDeg ?? 0}
         measureMode={measureMode}
         routeMode={routeMode}
+        sunShadowEnabled={sunShadowEnabled}
         onToggleMeasure={handleToggleMeasure}
         onToggleRouteMode={handleToggleRouteMode}
         onZoomIn={() => globeRef.current?.zoomIn()}
         onZoomOut={() => globeRef.current?.zoomOut()}
         onResetNorth={() => globeRef.current?.resetNorth()}
         onResetGlobe={() => globeRef.current?.resetGlobe()}
+        onSetTilt={(tiltDeg) => globeRef.current?.setCameraTilt(tiltDeg)}
+        onSetHeading={(headingDeg) => globeRef.current?.setCameraHeading(headingDeg)}
+        onToggleSunShadow={() => setSunShadowEnabled((enabled) => !enabled)}
       />
 
       {/* Top-Right Google Earth-Style Knowledge Card (Opens on Pin Single-Click) */}

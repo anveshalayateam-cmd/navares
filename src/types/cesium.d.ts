@@ -40,7 +40,13 @@ export interface CesiumViewer {
     globe: {
       baseColor: unknown;
       enableLighting: boolean;
+      dynamicAtmosphereLighting?: boolean;
+      dynamicAtmosphereLightingFromSun?: boolean;
       showGroundAtmosphere: boolean;
+      lightingFadeInDistance?: number;
+      lightingFadeOutDistance?: number;
+      preloadSiblings?: boolean;
+      maximumScreenSpaceError?: number;
       atmosphereLightIntensity: number;
       depthTestAgainstTerrain: boolean;
       pick: (ray: unknown, scene: unknown) => unknown;
@@ -63,6 +69,8 @@ export interface CesiumViewer {
       enableTilt: boolean;
       enableTranslate: boolean;
       zoomFactor?: number;
+      inertiaZoom?: number;
+      inertiaSpin?: number;
       zoomEventTypes: unknown[];
       tiltEventTypes: unknown[];
     };
@@ -84,6 +92,7 @@ export interface CesiumViewer {
   camera: {
     position: unknown;
     positionWC: unknown;
+    directionWC: unknown;
     heading: number;
     pitch: number;
     roll: number;
