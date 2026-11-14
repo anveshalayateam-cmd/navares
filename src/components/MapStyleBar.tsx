@@ -1,4 +1,5 @@
-import { CloudSun, Grid3X3 } from 'lucide-react';
+import { ChevronDown, ChevronUp, CloudSun, Grid3X3 } from 'lucide-react';
+import { useState } from 'react';
 import { MARS_TEMPERATURE_GRADIENT_CSS } from '../utils/marsOverlayMaps';
 
 export type MapStyleMode = 'optical' | 'temperature' | 'radiation' | 'elevation';
@@ -21,6 +22,32 @@ const STYLE_OPTIONS: Array<{ id: MapStyleMode; label: string; title: string }> =
   { id: 'elevation', label: 'Elevation', title: 'MOLA Grayscale Elevation (Black = Lowest, White = Highest)' },
 ];
 
+function LegendCollapseHeader({
+  label,
+  collapsed,
+  onToggle,
+}: {
+  label: string;
+  collapsed: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3 border-b border-white/10 pb-1">
+      <span className="font-display text-[10px] uppercase tracking-[0.16em] text-slate-300">{label}</span>
+      <button
+        type="button"
+        aria-expanded={!collapsed}
+        aria-label={collapsed ? `Expand ${label} billboard` : `Collapse ${label} billboard`}
+        title={collapsed ? `Expand ${label} billboard` : `Collapse ${label} billboard`}
+        onClick={onToggle}
+        className="inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-white/10 hover:text-white"
+      >
+        {collapsed ? <ChevronDown className="h-3.5 w-3.5" aria-hidden="true" /> : <ChevronUp className="h-3.5 w-3.5" aria-hidden="true" />}
+      </button>
+    </div>
+  );
+}
+
 export function MapStyleBar({
   mapStyle,
   onChangeMapStyle,
@@ -31,15 +58,22 @@ export function MapStyleBar({
   temperatureLs,
   onTemperatureLsChange,
 }: MapStyleBarProps) {
+  const [collapsedLegendMode, setCollapsedLegendMode] = useState<MapStyleMode | null>(null);
+  const toggleLegend = (mode: MapStyleMode) => {
+    setCollapsedLegendMode((current) => (current === mode ? null : mode));
+  };
+
   return (
     <div className="pointer-events-none fixed inset-x-0 bottom-14 z-20 flex flex-col items-center gap-2.5 px-2 sm:px-4 max-sm:gap-1.5">
       {mapStyle === 'temperature' && (
         <div className="pointer-events-auto flex flex-col gap-1.5 rounded-2xl border border-white/15 bg-[#0B0F17]/86 px-4 py-2 backdrop-blur-md shadow-2xl">
-          <div
-            aria-label="Temperature scale from -125°C violet/blue to +20°C red"
-            className="h-2.5 w-64 rounded-full border border-white/15 sm:w-80"
-            style={{ background: MARS_TEMPERATURE_GRADIENT_CSS }}
-          />
+          <LegendCollapseHeader label="Temperature legend" collapsed={collapsedLegendMode === 'temperature'} onToggle={() => toggleLegend('temperature')} />
+          {collapsedLegendMode !== 'temperature' && <>
+            <div
+              aria-label="Temperature scale from -125°C violet/blue to +20°C red"
+              className="h-2.5 w-64 rounded-full border border-white/15 sm:w-80"
+              style={{ background: MARS_TEMPERATURE_GRADIENT_CSS }}
+            />
           <div className="relative h-4 w-64 whitespace-nowrap font-mono-tabular text-[10px] text-slate-200 sm:w-80 sm:text-[11px]">
             <span className="absolute left-0 text-indigo-300">-125°C</span>
             <span className="absolute text-cyan-300" style={{ left: '34.48%', transform: 'translateX(-50%)' }}>-75°C</span>
@@ -47,7 +81,7 @@ export function MapStyleBar({
             <span className="absolute text-orange-400" style={{ left: '86.21%', transform: 'translateX(-50%)' }}>0°C</span>
             <span className="absolute right-0 font-semibold text-red-400">+20°C</span>
           </div>
-          <div className="mt-1 w-64 border-t border-white/10 pt-1.5 sm:w-80">
+            <div className="mt-1 w-64 border-t border-white/10 pt-1.5 sm:w-80">
             <div className="flex items-center justify-between gap-2 text-[10px] text-slate-300">
               <label htmlFor="mars-tes-season" className="font-medium text-cyan-200">TES season · Ls {temperatureLs}°–{temperatureLs + 30}°</label>
               <span className="text-slate-500">12 archive files sampled</span>
@@ -64,26 +98,33 @@ export function MapStyleBar({
               className="mt-1 w-full cursor-pointer accent-cyan-400"
             />
             <p className="text-[9px] leading-snug text-slate-500">NASA MGS TES daytime retrievals; cells without valid observations remain transparent.</p>
-          </div>
+            </div>
+          </>}
         </div>
       )}
 
       {mapStyle === 'radiation' && (
         <div className="pointer-events-auto flex max-w-[min(44rem,calc(100vw-1rem))] flex-wrap items-center justify-center gap-2.5 rounded-full border border-[#00FF41]/35 bg-[#050806]/88 px-4 py-1.5 backdrop-blur-md shadow-2xl">
-          <span className="whitespace-nowrap text-[11px] font-medium text-slate-200">Radiation Dose (MSL RAD Calibrated):</span>
-          <span className="whitespace-nowrap font-mono-tabular text-[11px] text-slate-300">0.2 mSv/day (Sheltered / Black)</span>
-          <div aria-label="Radiation scale from 0.2 mSv/day sheltered black to 1.2+ mSv/day high exposure bright green" className="h-2.5 w-32 rounded-full border border-white/15 sm:w-44" style={{ background: 'linear-gradient(90deg, #000000 0%, #001a05 22%, #008f11 55%, #00ff41 85%, #7dff9b 100%)' }} />
-          <span className="whitespace-nowrap font-mono-tabular text-[11px] font-semibold text-[#00FF41]">1.2+ mSv/day (High Exposure / Bright Green)</span>
+          <div className="w-full"><LegendCollapseHeader label="Radiation legend" collapsed={collapsedLegendMode === 'radiation'} onToggle={() => toggleLegend('radiation')} /></div>
+          {collapsedLegendMode !== 'radiation' && <>
+            <span className="whitespace-nowrap text-[11px] font-medium text-slate-200">Radiation Dose (MSL RAD Calibrated):</span>
+            <span className="whitespace-nowrap font-mono-tabular text-[11px] text-slate-300">0.2 mSv/day (Sheltered / Black)</span>
+            <div aria-label="Radiation scale from 0.2 mSv/day sheltered black to 1.2+ mSv/day high exposure bright green" className="h-2.5 w-32 rounded-full border border-white/15 sm:w-44" style={{ background: 'linear-gradient(90deg, #000000 0%, #001a05 22%, #008f11 55%, #00ff41 85%, #7dff9b 100%)' }} />
+            <span className="whitespace-nowrap font-mono-tabular text-[11px] font-semibold text-[#00FF41]">1.2+ mSv/day (High Exposure / Bright Green)</span>
+          </>}
         </div>
       )}
 
       {mapStyle === 'elevation' && (
         <div className="pointer-events-auto flex max-w-[min(44rem,calc(100vw-1rem))] flex-wrap items-center justify-center gap-2.5 rounded-full border border-white/15 bg-[#0B0F17]/86 px-4 py-1.5 backdrop-blur-md shadow-2xl">
-          <span className="whitespace-nowrap font-mono-tabular text-[11px] text-slate-300">-8 km (Black / Lowest)</span>
-          <div aria-label="Grayscale elevation scale from -8 km black to +21 km white" className="h-2.5 w-32 rounded-full border border-white/20 sm:w-44" style={{ background: 'linear-gradient(90deg, #000000 0%, #808080 50%, #ffffff 100%)' }} />
-          <span className="whitespace-nowrap font-mono-tabular text-[11px] text-slate-300">0 km (Mid Gray)</span>
-          <span className="text-slate-600" aria-hidden="true">·</span>
-          <span className="whitespace-nowrap font-mono-tabular text-[11px] font-semibold text-white">+21 km (White / Highest)</span>
+          <div className="w-full"><LegendCollapseHeader label="Elevation legend" collapsed={collapsedLegendMode === 'elevation'} onToggle={() => toggleLegend('elevation')} /></div>
+          {collapsedLegendMode !== 'elevation' && <>
+            <span className="whitespace-nowrap font-mono-tabular text-[11px] text-slate-300">-8 km (Black / Lowest)</span>
+            <div aria-label="Grayscale elevation scale from -8 km black to +21 km white" className="h-2.5 w-32 rounded-full border border-white/20 sm:w-44" style={{ background: 'linear-gradient(90deg, #000000 0%, #808080 50%, #ffffff 100%)' }} />
+            <span className="whitespace-nowrap font-mono-tabular text-[11px] text-slate-300">0 km (Mid Gray)</span>
+            <span className="text-slate-600" aria-hidden="true">·</span>
+            <span className="whitespace-nowrap font-mono-tabular text-[11px] font-semibold text-white">+21 km (White / Highest)</span>
+          </>}
         </div>
       )}
 
