@@ -23,7 +23,7 @@ export interface RouteWaypoint {
   lonDeg: number;
   elevMeters: number;
   radDose: number;
-  tempC: number;
+  tempC: number | null;
 }
 
 export interface RoverEncounter {
@@ -51,7 +51,7 @@ export interface SurvivalRouteResult {
   avgRadiationMsVDay: number;
   peakRadiationMsVDay: number;
   directPeakRadiationMsVDay: number;
-  meanTempC: number;
+  meanTempC: number | null;
   maxElevationM: number;
   minElevationM: number;
   roverEncounters: RoverEncounter[];
@@ -239,7 +239,7 @@ interface NodeCostSample {
   lonDeg: number;
   elev: number;
   rad: number;
-  temp: number;
+  temp: number | null;
   baseWeight: number;
 }
 
@@ -252,7 +252,8 @@ interface NodeCostSample {
  */
 export function computeOptimalSurvivalRoute(
   start: RouteEndpoint,
-  destination: RouteEndpoint
+  destination: RouteEndpoint,
+  solarLongitudeLs = 0
 ): SurvivalRouteResult {
   const directDistanceKm = Math.max(
     1,
@@ -338,14 +339,15 @@ export function computeOptimalSurvivalRoute(
     const { latDeg, lonDeg } = getNodeCoords(row, col);
     const elev = getMarsElevation(latDeg, lonDeg);
     const rad = computeSurfaceRadiationDose(lonDeg, latDeg);
-    const temp = getMarsSurfaceTempC(latDeg, lonDeg);
+    const temp = getMarsSurfaceTempC(latDeg, lonDeg, solarLongitudeLs);
 
     // 1. Minimum Radiation (+weight)
     const radNorm = clamp((rad - 0.35) / 0.85, 0, 1);
     const radPenalty = 1.95 * radNorm;
 
     // 2. Maximum Temperature (-weight / cold penalty)
-    const coldNorm = clamp((12 - temp) / 137, 0, 1);
+    // Missing TES coverage is unknown, not warm: use a neutral mid-grid cold-risk estimate.
+    const coldNorm = temp === null ? 0.5 : clamp((12 - temp) / 137, 0, 1);
     const tempPenalty = 1.05 * coldNorm;
 
     // 3. Minimum Elevation (+weight)
@@ -543,12 +545,13 @@ export function computeOptimalSurvivalRoute(
     lonDeg: pt.lonDeg,
     elevMeters: getMarsElevation(pt.latDeg, pt.lonDeg),
     radDose: computeSurfaceRadiationDose(pt.lonDeg, pt.latDeg),
-    tempC: getMarsSurfaceTempC(pt.latDeg, pt.lonDeg),
+    tempC: getMarsSurfaceTempC(pt.latDeg, pt.lonDeg, solarLongitudeLs),
   }));
 
   let optimalDistanceKm = 0;
   let weightedRadSum = 0;
   let weightedTempSum = 0;
+  let measuredTempDistanceKm = 0;
   let peakRad = 0;
   let maxElevationM = -Infinity;
   let minElevationM = Infinity;
@@ -564,13 +567,16 @@ export function computeOptimalSurvivalRoute(
       const segKm = marsGeodesicKm(prev.latDeg, prev.lonDeg, wp.latDeg, wp.lonDeg);
       optimalDistanceKm += segKm;
       weightedRadSum += segKm * 0.5 * (prev.radDose + wp.radDose);
-      weightedTempSum += segKm * 0.5 * (prev.tempC + wp.tempC);
+      if (prev.tempC !== null && wp.tempC !== null) {
+        weightedTempSum += segKm * 0.5 * (prev.tempC + wp.tempC);
+        measuredTempDistanceKm += segKm;
+      }
     }
   }
 
   const safeDist = Math.max(1, optimalDistanceKm);
   const avgRadiationMsVDay = weightedRadSum / safeDist;
-  const meanTempC = weightedTempSum / safeDist;
+  const meanTempC = measuredTempDistanceKm > 0 ? weightedTempSum / measuredTempDistanceKm : null;
   const detourPercent = ((optimalDistanceKm - directDistanceKm) / directDistanceKm) * 100;
 
   // Detect prioritized Rover/Lander encounters along the computed path

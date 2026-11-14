@@ -29,6 +29,7 @@ export default function App() {
 
   const [selectedTarget, setSelectedTarget] = useState<MarsTarget | null>(null);
   const [mapStyle, setMapStyle] = useState<MapStyleMode>('optical');
+  const [temperatureLs, setTemperatureLs] = useState<number>(0);
   const [telemetryMode, setTelemetryMode] = useState<TelemetryMode>('realtime');
   const [headingRad, setHeadingRad] = useState<number>(0);
   const [cameraTelemetry, setCameraTelemetry] = useState<CameraTelemetry | null>(null);
@@ -150,6 +151,7 @@ export default function App() {
         ref={globeRef}
         selectedTargetId={selectedTarget?.id ?? null}
         mapStyle={mapStyle}
+        temperatureLs={temperatureLs}
         sunShadowEnabled={sunShadowEnabled}
         gridEnabled={gridEnabled}
         telemetryMode={telemetryMode}
@@ -197,6 +199,8 @@ export default function App() {
       <MapStyleBar
         mapStyle={mapStyle}
         onChangeMapStyle={setMapStyle}
+        temperatureLs={temperatureLs}
+        onTemperatureLsChange={setTemperatureLs}
         gridEnabled={gridEnabled}
         onToggleGrid={() => setGridEnabled((enabled) => !enabled)}
         weatherEnabled={weatherEnabled}
@@ -227,6 +231,7 @@ export default function App() {
       {selectedTarget && (
         <TargetInfoCard
           target={selectedTarget}
+          temperatureLs={temperatureLs}
           liveSatellite={liveSatellites[selectedTarget.id]}
           weatherEnabled={weatherEnabled}
           weatherStation={weatherStations.find((s) => s.targetId === selectedTarget.id)}

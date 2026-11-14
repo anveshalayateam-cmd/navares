@@ -1,5 +1,6 @@
 import { Database, Info, MoreVertical, Radio, RotateCw, ShieldCheck, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { MarsClockWidget } from './MarsClockWidget';
 
 export type InfoModalType = 'rescue' | 'details' | 'about' | null;
 
@@ -45,6 +46,7 @@ const DATA_ATTRIBUTIONS = [
       <>
         Standardized Martian feature coordinates, delta basins, lava-tube skylights, and crater
         catalogs — <em className="text-slate-300">USGS Astrogeology Science Center / IAU</em>.
+        Selected named-feature footprints use the Gazetteer’s approximate WKT outlines, not geologic perimeters.
       </>
     ),
   },
@@ -72,6 +74,27 @@ const DATA_ATTRIBUTIONS = [
       <>
         Curiosity (REMS), Perseverance (MEDA), and InSight Mars Weather Data —{' '}
         <em className="text-slate-300">NASA / JPL-Caltech / CAB</em>.
+      </>
+    ),
+  },
+  {
+    title: 'NASA MGS TES Surface Temperature Retrievals',
+    description: (
+      <>
+        Seasonal daytime grid uses quality-screened, recalibrated nadir surface-temperature retrievals
+        from Mars Global Surveyor TES, converted from kelvin and binned by solar longitude. The
+        composite uses 12 selected archive orbit files; it is not live weather or a complete global
+        climatology. Transparent areas mark cells with no valid retrievals. Dataset: Pankine et al.,
+        NASA PDS Atmospheres Node, DOI{' '}
+        <a
+          href="https://doi.org/10.17189/xhqz-zw13"
+          target="_blank"
+          rel="noreferrer"
+          className="text-cyan-300 underline underline-offset-2 hover:text-cyan-200"
+        >
+          10.17189/xhqz-zw13
+        </a>
+        .
       </>
     ),
   },
@@ -205,6 +228,7 @@ export function InfoMenu({ hasTargetCardOpen }: InfoMenuProps) {
             : 'translate-x-0 opacity-100 scale-100 pointer-events-auto'
         }`}
       >
+        <MarsClockWidget />
         {/* Circular 3-Dot Menu Trigger */}
         <div className="relative">
           <button

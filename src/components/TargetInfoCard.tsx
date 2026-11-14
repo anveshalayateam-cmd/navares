@@ -3,11 +3,16 @@ import { useEffect, useState } from 'react';
 import { CATEGORY_COLORS, CATEGORY_LABELS, MarsTarget, TelemetryMode } from '../data/marsData';
 import { MarsWeatherStation } from '../services/marsWeather';
 import { createTargetPhotoFallback, formatLatLon } from '../utils/marsMath';
-import { formatMarsSurfaceTempC, getMarsSurfaceTempC } from '../utils/marsOverlayMaps';
+import {
+  formatMarsSurfaceTempC,
+  getMarsSurfaceTempSample,
+} from '../utils/marsOverlayMaps';
+import { MARS_FEATURE_OUTLINES } from '../data/marsFeatureOutlines';
 import { LiveSatellitePosition } from './MarsGlobe';
 
 interface TargetInfoCardProps {
   target: MarsTarget;
+  temperatureLs: number;
   liveSatellite?: LiveSatellitePosition;
   weatherEnabled?: boolean;
   weatherStation?: MarsWeatherStation;
@@ -19,6 +24,7 @@ interface TargetInfoCardProps {
 
 export function TargetInfoCard({
   target,
+  temperatureLs,
   liveSatellite,
   weatherEnabled,
   weatherStation,
@@ -48,9 +54,9 @@ export function TargetInfoCard({
     target.category === 'satellite' && liveSatellite ? liveSatellite.latDeg : target.latitude;
   const surfaceTempLon =
     target.category === 'satellite' && liveSatellite ? liveSatellite.lonDeg : target.longitude;
-  const modeledSurfaceTemp = formatMarsSurfaceTempC(
-    getMarsSurfaceTempC(surfaceTempLat, surfaceTempLon)
-  );
+  const tesSample = getMarsSurfaceTempSample(surfaceTempLat, surfaceTempLon, temperatureLs);
+  const tesSurfaceTemp = formatMarsSurfaceTempC(tesSample?.tempC ?? null);
+  const featureOutline = MARS_FEATURE_OUTLINES[target.id as keyof typeof MARS_FEATURE_OUTLINES];
 
   const radiationColorClass =
     target.radiationSeverity === 'critical'
@@ -85,6 +91,11 @@ export function TargetInfoCard({
             {target.name}
           </h2>
           <p className="text-xs text-slate-400">{target.region}</p>
+          {featureOutline && (
+            <p className="mt-1 text-[10px] leading-snug text-cyan-200/80">
+              Terrain footprint highlighted · approximate USGS/IAU boundary
+            </p>
+          )}
         </div>
 
         <button
@@ -136,10 +147,18 @@ export function TargetInfoCard({
           </div>
           <div className="flex items-baseline justify-between gap-3">
             <dt className="text-slate-400 shrink-0">
-              {target.category === 'satellite' ? 'Surface Temp at Subpoint' : 'Modeled Surface Temp'}
+              {target.category === 'satellite' ? 'NASA TES at subpoint' : 'NASA TES daytime sample'}
             </dt>
             <dd className="font-mono-tabular font-medium text-amber-300 text-right">
-              {modeledSurfaceTemp}
+              {tesSurfaceTemp}
+            </dd>
+          </div>
+          <div className="flex items-baseline justify-between gap-3">
+            <dt className="text-slate-400 shrink-0">TES basis</dt>
+            <dd className="font-mono-tabular text-[10px] text-right text-slate-300">
+              {tesSample
+                ? `${tesSample.source === 'seasonal TES observations' ? `Ls ${tesSample.seasonLsStart}° bin` : 'multi-season fallback'} · n=${tesSample.sampleCount.toLocaleString()} · LT ${tesSample.localTimeHours?.toFixed(1) ?? '—'}h · ±${tesSample.formalErrorK?.toFixed(1) ?? '—'}K`
+                : 'No nearby quality-screened TES retrieval'}
             </dd>
           </div>
           <div className="flex items-baseline justify-between gap-3">

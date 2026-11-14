@@ -1,4 +1,5 @@
 import { sampleMarsElevationMeters } from '../data/marsData';
+import { NASA_TES_TEMPERATURE_GRID } from '../data/marsTesTemperatureGrid';
 
 /**
  * Computes calibrated surface radiation dose (mSv/day) at (lonDeg, latDeg)
@@ -46,60 +47,186 @@ const TEMPERATURE_COLOR_STOPS: Array<[number, [number, number, number]]> = [
   [20, [255, 0, 0]], // Red
 ];
 
-/**
- * Estimates daytime Martian surface temperature in Celsius at (latitude, longitude).
- * Regional ranges are constrained to the map legend: polar caps -125..-95°C,
- * high volcanic peaks -80..-65°C, mid-latitude plains -45..-30°C,
- * equatorial craters/plains -15..+5°C, and deep equatorial canyons +5..+15°C.
- */
-export function getMarsSurfaceTempC(lat: number, lon: number): number {
-  const latitude = Math.max(-90, Math.min(90, lat));
-  const longitude = ((lon + 180) % 360 + 360) % 360 - 180;
-  const absLat = Math.abs(latitude);
-  const elevationMeters = sampleMarsElevationMeters(longitude, latitude);
-  const clamp = (value: number, min: number, max: number) =>
-    Math.max(min, Math.min(max, value));
+const GRID_DEGREES = NASA_TES_TEMPERATURE_GRID.grid.cellSizeDegrees;
+const LON_CELLS = NASA_TES_TEMPERATURE_GRID.grid.longitudeCells;
+const LAT_CELLS = NASA_TES_TEMPERATURE_GRID.grid.latitudeCells;
+const CELL_COUNT = LON_CELLS * LAT_CELLS;
+const SEASON_COUNT = NASA_TES_TEMPERATURE_GRID.grid.seasons;
 
-  // Polar caps and high-latitude ice stay at the cold end of the legend.
-  if (absLat > 70) {
-    return -95 - clamp((absLat - 70) * 1.5, 0, 30);
-  }
-
-  // Olympus Mons and the Tharsis Montes are colder than surrounding plains.
-  if (absLat < 35 && elevationMeters >= 9000) {
-    return -65 - clamp((elevationMeters - 9000) / 800, 0, 15);
-  }
-
-  // Deep Valles Marineris floor: low elevation and sunlit equatorial canyon.
-  if (
-    absLat < 20 &&
-    longitude >= -82 &&
-    longitude <= -48 &&
-    elevationMeters < -2500
-  ) {
-    return 5 + clamp((-elevationMeters - 2500) / 450, 0, 1) * 10;
-  }
-
-  // Viking 1 and Pathfinder sit in cool northern plains despite their low latitude.
-  if (
-    absLat >= 14 &&
-    absLat <= 28 &&
-    longitude >= -55 &&
-    longitude <= -25
-  ) {
-    return -30 - clamp(absLat - 14, 0, 15);
-  }
-
-  // Gale, Jezero, Meridiani/Opportunity and comparable equatorial plains.
-  if (absLat <= 25) {
-    return -15 + 20 * (1 - absLat / 25);
-  }
-
-  // Northern and mid-latitude plains trend from -30°C toward -45°C by 60°.
-  return -30 - clamp((absLat - 30) / 30, 0, 1) * 15;
+export interface MarsSurfaceTempSample {
+  tempC: number;
+  sampleCount: number;
+  formalErrorK: number | null;
+  localTimeHours: number | null;
+  seasonLsStart: number | null;
+  source: 'seasonal TES observations' | 'multi-season TES fallback';
+  distanceDegrees: number;
 }
 
-export function formatMarsSurfaceTempC(tempC: number): string {
+interface SampleGrid {
+  temperatureC: readonly (number | null)[];
+  sampleCount: readonly number[];
+  formalErrorK: readonly (number | null)[];
+  localTimeHours: readonly (number | null)[];
+}
+
+// Precompute a quality-weighted multi-season fallback once. This is still real TES data,
+// used only where the selected Ls bin has no sufficiently nearby valid observations.
+const annualTempSums = new Array<number>(CELL_COUNT).fill(0);
+const annualWeights = new Array<number>(CELL_COUNT).fill(0);
+const annualCounts = new Array<number>(CELL_COUNT).fill(0);
+const annualErrorSums = new Array<number>(CELL_COUNT).fill(0);
+const annualTimeSums = new Array<number>(CELL_COUNT).fill(0);
+
+for (let season = 0; season < SEASON_COUNT; season++) {
+  const source = NASA_TES_TEMPERATURE_GRID.seasons[season];
+  for (let cell = 0; cell < CELL_COUNT; cell++) {
+    const tempC = source.temperatureC[cell];
+    const count = source.sampleCount[cell];
+    const errorK = source.formalErrorK[cell];
+    const localTime = source.localTimeHours[cell];
+    if (tempC === null || count <= 0) continue;
+    const weight = Math.min(count, 1000) / Math.max((errorK ?? 2) ** 2, 0.25);
+    annualTempSums[cell] += tempC * weight;
+    annualWeights[cell] += weight;
+    annualCounts[cell] += count;
+    annualErrorSums[cell] += (errorK ?? 2) * weight;
+    annualTimeSums[cell] += (localTime ?? 13) * weight;
+  }
+}
+
+const annualGrid: SampleGrid = {
+  temperatureC: annualWeights.map((weight, cell) =>
+    weight > 0 ? Math.round((annualTempSums[cell] / weight) * 10) / 10 : null
+  ),
+  sampleCount: annualCounts,
+  formalErrorK: annualWeights.map((weight, cell) =>
+    weight > 0 ? Math.round((annualErrorSums[cell] / weight) * 10) / 10 : null
+  ),
+  localTimeHours: annualWeights.map((weight, cell) =>
+    weight > 0 ? Math.round((annualTimeSums[cell] / weight) * 10) / 10 : null
+  ),
+};
+
+function wrapLongitude(lon: number): number {
+  return ((lon + 180) % 360 + 360) % 360 - 180;
+}
+
+function seasonIndexForLs(ls: number): number {
+  const normalizedLs = ((ls % 360) + 360) % 360;
+  return Math.min(SEASON_COUNT - 1, Math.floor(normalizedLs / 30));
+}
+
+function searchGrid(
+  grid: SampleGrid,
+  latitude: number,
+  longitude: number,
+  maxDistanceDegrees: number,
+  seasonLsStart: number | null,
+  source: MarsSurfaceTempSample['source']
+): MarsSurfaceTempSample | null {
+  const lon = wrapLongitude(longitude);
+  const lat = Math.max(-90, Math.min(90, latitude));
+  const centerLonIndex = Math.min(LON_CELLS - 1, Math.floor((lon + 180) / GRID_DEGREES));
+  const centerLatIndex = Math.min(LAT_CELLS - 1, Math.floor((lat + 90) / GRID_DEGREES));
+  const searchRadius = Math.ceil(maxDistanceDegrees / GRID_DEGREES) + 1;
+  const candidates: Array<{ cell: number; distance: number }> = [];
+
+  for (
+    let latIndex = Math.max(0, centerLatIndex - searchRadius);
+    latIndex <= Math.min(LAT_CELLS - 1, centerLatIndex + searchRadius);
+    latIndex++
+  ) {
+    for (let lonOffset = -searchRadius; lonOffset <= searchRadius; lonOffset++) {
+      const lonIndex = (centerLonIndex + lonOffset + LON_CELLS) % LON_CELLS;
+      const cell = latIndex * LON_CELLS + lonIndex;
+      if (grid.temperatureC[cell] === null || grid.sampleCount[cell] <= 0) continue;
+      const cellLat = -90 + (latIndex + 0.5) * GRID_DEGREES;
+      const cellLon = -180 + (lonIndex + 0.5) * GRID_DEGREES;
+      const deltaLon = wrapLongitude(cellLon - lon) * Math.cos((lat * Math.PI) / 180);
+      const distance = Math.hypot(cellLat - lat, deltaLon);
+      if (distance <= maxDistanceDegrees) candidates.push({ cell, distance });
+    }
+  }
+
+  if (!candidates.length) return null;
+  candidates.sort((a, b) => a.distance - b.distance);
+  const nearest = candidates.slice(0, 4);
+  let weightedTemp = 0;
+  let weightedError = 0;
+  let weightedLocalTime = 0;
+  let totalWeight = 0;
+  let totalCount = 0;
+
+  for (const candidate of nearest) {
+    const cell = candidate.cell;
+    const tempC = grid.temperatureC[cell];
+    if (tempC === null) continue;
+    const errorK = grid.formalErrorK[cell] ?? 2;
+    const sampleCount = grid.sampleCount[cell];
+    const weight = Math.min(sampleCount, 1000) /
+      (Math.max(errorK ** 2, 0.25) * (1 + candidate.distance ** 2));
+    weightedTemp += tempC * weight;
+    weightedError += errorK * weight;
+    weightedLocalTime += (grid.localTimeHours[cell] ?? 13) * weight;
+    totalWeight += weight;
+    totalCount += sampleCount;
+  }
+  if (!totalWeight) return null;
+
+  return {
+    tempC: weightedTemp / totalWeight,
+    sampleCount: totalCount,
+    formalErrorK: weightedError / totalWeight,
+    localTimeHours: weightedLocalTime / totalWeight,
+    seasonLsStart,
+    source,
+    distanceDegrees: nearest[0].distance,
+  };
+}
+
+/** Return the nearest quality-screened MGS TES daytime observation composite at a location. */
+export function getMarsSurfaceTempSample(
+  lat: number,
+  lon: number,
+  solarLongitudeLs = 0
+): MarsSurfaceTempSample | null {
+  const seasonIndex = seasonIndexForLs(solarLongitudeLs);
+  const season = NASA_TES_TEMPERATURE_GRID.seasons[seasonIndex];
+  const seasonalSample = searchGrid(
+    season,
+    lat,
+    lon,
+    10,
+    season.lsStart,
+    'seasonal TES observations'
+  );
+  if (seasonalSample) return seasonalSample;
+
+  return searchGrid(
+    annualGrid,
+    lat,
+    lon,
+    14,
+    null,
+    'multi-season TES fallback'
+  );
+}
+
+/**
+ * Shared temperature lookup used by the globe canvas, inline weather labels, cards, and route model.
+ * Values come from MGS TES archive retrieval composites; no-data locations return null.
+ */
+export function getMarsSurfaceTempC(
+  lat: number,
+  lon: number,
+  solarLongitudeLs = 0
+): number | null {
+  return getMarsSurfaceTempSample(lat, lon, solarLongitudeLs)?.tempC ?? null;
+}
+
+export function formatMarsSurfaceTempC(tempC: number | null): string {
+  if (tempC === null || !Number.isFinite(tempC)) return 'No TES data';
   const rounded = Math.round(tempC);
   return `${rounded > 0 ? '+' : ''}${rounded}°C`;
 }
@@ -136,7 +263,9 @@ function elevationToGrayscaleRgb(elevMeters: number): [number, number, number] {
 function renderEquirectangularMap(
   width: number,
   height: number,
-  pixelFn: (lonDeg: number, latDeg: number) => [number, number, number]
+  pixelFn: (lonDeg: number, latDeg: number) => [number, number, number] | [number, number, number, number],
+  gridW = 1024,
+  gridH = 512
 ): string {
   const canvas = document.createElement('canvas');
   canvas.width = width;
@@ -144,8 +273,6 @@ function renderEquirectangularMap(
   const ctx = canvas.getContext('2d');
   if (!ctx) return '';
 
-  const gridW = 1024;
-  const gridH = 512;
   const offscreen = document.createElement('canvas');
   offscreen.width = gridW;
   offscreen.height = gridH;
@@ -159,12 +286,12 @@ function renderEquirectangularMap(
     const latDeg = 90 - ((row + 0.5) / gridH) * 180;
     for (let col = 0; col < gridW; col++) {
       const lonDeg = -180 + ((col + 0.5) / gridW) * 360;
-      const [r, g, b] = pixelFn(lonDeg, latDeg);
+      const color = pixelFn(lonDeg, latDeg);
       const idx = (row * gridW + col) * 4;
-      data[idx] = r;
-      data[idx + 1] = g;
-      data[idx + 2] = b;
-      data[idx + 3] = 255;
+      data[idx] = color[0];
+      data[idx + 1] = color[1];
+      data[idx + 2] = color[2];
+      data[idx + 3] = color[3] ?? 255;
     }
   }
 
@@ -182,10 +309,19 @@ export function generateMarsRadiationDataUrl(width = 2048, height = 1024): strin
   );
 }
 
-export function generateMarsTemperatureDataUrl(width = 2048, height = 1024): string {
-  return renderEquirectangularMap(width, height, (lon, lat) =>
-    tempToRainbowRgb(getMarsSurfaceTempC(lat, lon))
-  );
+export function generateMarsTemperatureDataUrl(
+  width = 2048,
+  height = 1024,
+  solarLongitudeLs = 0
+): string {
+  // TES source retrievals are binned at 4°; a 1° working raster provides smooth
+  // texture sampling without expensive sub-degree searches of sparse data.
+  return renderEquirectangularMap(width, height, (lon, lat) => {
+    const tempC = getMarsSurfaceTempC(lat, lon, solarLongitudeLs);
+    if (tempC === null) return [0, 0, 0, 0];
+    const [r, g, b] = tempToRainbowRgb(tempC);
+    return [r, g, b, 255];
+  }, 360, 180);
 }
 
 export function generateMarsElevationGrayscaleDataUrl(width = 2048, height = 1024): string {

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Globe, Minus, Plus, Route, Ruler } from 'lucide-react';
+import { Minus, Plus, RotateCcw, Route, Ruler } from 'lucide-react';
 
 interface NavControlsProps {
   headingRad: number;
@@ -132,7 +132,12 @@ export function NavControls({
           aria-label={`Switch to ${viewToggleLabel} view`}
           aria-pressed={isPerspectiveView}
           title={isAltitudeLocked ? '3D/2D tilt controls unlock below 2,000 km' : `Switch to ${viewToggleLabel} view`}
-          className="flex h-10 w-10 items-center justify-center rounded-full border border-cyan-300/25 bg-[#0B0F17]/82 text-[11px] font-bold tracking-wide text-cyan-100 shadow-2xl backdrop-blur-md transition-all hover:bg-cyan-400/15 hover:text-white disabled:cursor-not-allowed disabled:border-slate-500/20 disabled:bg-slate-700/25 disabled:text-slate-500 disabled:opacity-40 disabled:shadow-none disabled:hover:bg-slate-700/25"
+          style={{
+            opacity: isAltitudeLocked ? 0.4 : 1,
+            cursor: isAltitudeLocked ? 'not-allowed' : 'pointer',
+            transition: 'all 0.2s ease',
+          }}
+          className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full border border-cyan-300/25 bg-[#0B0F17]/82 text-[11px] font-bold tracking-wide text-cyan-100 shadow-2xl backdrop-blur-md transition-all hover:bg-cyan-400/15 hover:text-white disabled:cursor-not-allowed disabled:border-slate-500/20 disabled:bg-slate-700/25 disabled:text-slate-500 disabled:opacity-40 disabled:shadow-none disabled:hover:bg-slate-700/25"
         >
           {viewToggleLabel}
         </button>
@@ -226,10 +231,10 @@ export function NavControls({
           type="button"
           onClick={onResetGlobe}
           aria-label="Reset global Mars orbit view"
-          title="Globe Reset"
-          className="flex h-10 w-10 items-center justify-center text-slate-200 transition-colors hover:bg-white/10 hover:text-white cursor-pointer"
+          title="Reset Globe"
+          className="group/reset flex h-10 w-10 items-center justify-center rounded-b-2xl border-t border-white/10 text-slate-300 transition-all duration-150 hover:bg-cyan-400/10 hover:text-cyan-100 active:bg-cyan-400/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-cyan-300/70 cursor-pointer"
         >
-          <Globe className="h-4 w-4" aria-hidden="true" />
+          <RotateCcw className="h-4 w-4 transition-transform duration-200 group-hover/reset:-rotate-45 group-active/reset:-rotate-90" aria-hidden="true" />
         </button>
       </div>
 

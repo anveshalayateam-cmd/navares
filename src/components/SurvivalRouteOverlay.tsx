@@ -137,9 +137,9 @@ export function SurvivalRouteOverlay({
               )}
 
               <div className="flex items-baseline justify-between gap-2">
-                <dt className="text-slate-400">Mean Route Temperature</dt>
+                <dt className="text-slate-400">Mean TES Route Temperature</dt>
                 <dd className="font-mono-tabular font-medium text-amber-300">
-                  {routeResult.meanTempC.toFixed(1)} °C
+                  {routeResult.meanTempC === null ? 'No TES coverage' : `${routeResult.meanTempC.toFixed(1)} °C`}
                 </dd>
               </div>
 
