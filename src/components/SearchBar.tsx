@@ -7,6 +7,7 @@ import {
   MarsTarget,
   TargetCategory,
 } from '../data/marsData';
+import { RoverTelemetryFix } from '../services/marsRoverTelemetry';
 import { formatLatLon } from '../utils/marsMath';
 
 type SearchCategoryFilter = 'all' | TargetCategory;
@@ -20,9 +21,10 @@ const SEARCH_TABS: Array<{ id: SearchCategoryFilter; label: string }> = [
 
 interface SearchBarProps {
   onSelectAndFly: (target: MarsTarget) => void;
+  liveRovers?: Record<string, RoverTelemetryFix>;
 }
 
-export function SearchBar({ onSelectAndFly }: SearchBarProps) {
+export function SearchBar({ onSelectAndFly, liveRovers }: SearchBarProps) {
   const [query, setQuery] = useState('');
   const [activeTab, setActiveTab] = useState<SearchCategoryFilter>('all');
   const [isOpen, setIsOpen] = useState(false);
@@ -111,7 +113,7 @@ export function SearchBar({ onSelectAndFly }: SearchBarProps) {
               inputRef.current?.blur();
             }
           }}
-          placeholder="Search 48 Mars locations, rovers, orbiters..."
+          placeholder={`Search ${MARS_TARGETS.length} Mars locations, rovers, orbiters...`}
           aria-label="Search Mars locations, rovers, orbiters"
           className="w-full bg-transparent text-xs sm:text-[13px] text-slate-100 placeholder:text-slate-400 focus:outline-none"
         />
@@ -207,7 +209,11 @@ export function SearchBar({ onSelectAndFly }: SearchBarProps) {
                     <span className="shrink-0 font-mono-tabular text-[10px] text-slate-400">
                       {target.category === 'satellite'
                         ? `${(target.orbit!.altitudeMeters / 1000).toFixed(0)} km`
-                        : formatLatLon(target.latitude, target.longitude, 1)}
+                        : formatLatLon(
+                            liveRovers?.[target.id]?.latitude ?? target.latitude,
+                            liveRovers?.[target.id]?.longitude ?? target.longitude,
+                            1
+                          )}
                     </span>
                   </button>
                 );

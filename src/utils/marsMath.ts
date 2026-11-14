@@ -43,87 +43,173 @@ export function formatLatLon(latDeg: number, lonDeg: number, decimals = 4): stri
   return `${Math.abs(latDeg).toFixed(decimals)}° ${latHem}, ${Math.abs(lonDeg).toFixed(decimals)}° ${lonHem}`;
 }
 
-/**
- * Computes 3D Cartesian position on a Keplerian circular inclined orbit around Mars.
- * Uses Mars's gravitational parameter (MU_MARS) and equatorial radius.
- */
-export function computeSatelliteCartesian(
-  target: MarsTarget,
-  simElapsedSeconds: number
-): { x: number; y: number; z: number; latDeg: number; lonDeg: number; altKm: number } {
-  const orbit = target.orbit!;
-  const radius = MARS_CONSTANTS.EQUATORIAL_RADIUS + orbit.altitudeMeters;
-  // Angular velocity omega = sqrt(mu / r^3) in rad/s
-  const omega = Math.sqrt(MARS_CONSTANTS.MU_MARS / Math.pow(radius, 3));
+import { LiveOrbiterElements } from '../services/marsOrbiterSync';
 
-  const incRad = (orbit.inclinationDeg * Math.PI) / 180;
-  const raanRad = (orbit.raanDeg * Math.PI) / 180;
-  const phase0Rad = (orbit.initialPhaseDeg * Math.PI) / 180;
-  const theta = phase0Rad + omega * simElapsedSeconds;
+const J2000_EPOCH_MS = Date.UTC(2000, 0, 1, 12, 0, 0);
+const MARS_J2 = 0.00196045;
+const MARS_W0_DEG = 176.63;
+const MARS_WDOT_DEG_PER_DAY = 350.89198226;
+const DEFAULT_ORBIT_EPOCH_MS = Date.UTC(2025, 0, 1, 0, 0, 0);
+
+function getMarsRotationRad(epochMs: number): number {
+  const daysSinceJ2000 = (epochMs - J2000_EPOCH_MS) / 86_400_000;
+  const wDeg = MARS_W0_DEG + MARS_WDOT_DEG_PER_DAY * daysSinceJ2000;
+  return (wDeg * Math.PI) / 180;
+}
+
+function solveKeplerEccentricAnomaly(meanAnomalyRad: number, e: number): number {
+  const M = ((meanAnomalyRad % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+  let E = M + e * Math.sin(M);
+  for (let iter = 0; iter < 4; iter++) {
+    const f = E - e * Math.sin(E) - M;
+    const fp = 1 - e * Math.cos(E);
+    E -= f / fp;
+  }
+  return E;
+}
+
+function propagateOrbitPoint(
+  a: number,
+  e: number,
+  incRad: number,
+  raanRad: number,
+  argPeriRad: number,
+  meanAnomalyRad: number,
+  marsRotRad: number
+): { x: number; y: number; z: number; r: number } {
+  const E = solveKeplerEccentricAnomaly(meanAnomalyRad, e);
+  const halfE = E / 2;
+  const trueAnomaly =
+    2 * Math.atan2(Math.sqrt(1 + e) * Math.sin(halfE), Math.sqrt(1 - e) * Math.cos(halfE));
+  const r = a * (1 - e * Math.cos(E));
+  const u = argPeriRad + trueAnomaly;
 
   const cosO = Math.cos(raanRad);
   const sinO = Math.sin(raanRad);
   const cosI = Math.cos(incRad);
   const sinI = Math.sin(incRad);
-  const cosT = Math.cos(theta);
-  const sinT = Math.sin(theta);
+  const cosU = Math.cos(u);
+  const sinU = Math.sin(u);
 
-  const x = radius * (cosO * cosT - sinO * sinT * cosI);
-  const y = radius * (sinO * cosT + cosO * sinT * cosI);
-  const z = radius * (sinT * sinI);
+  const xMci = r * (cosO * cosU - sinO * sinU * cosI);
+  const yMci = r * (sinO * cosU + cosO * sinU * cosI);
+  const zMci = r * (sinU * sinI);
 
-  const latDeg = (Math.asin(Math.max(-1, Math.min(1, z / radius))) * 180) / Math.PI;
-  const lonDeg = (Math.atan2(y, x) * 180) / Math.PI;
+  // Rotate Mars-Centered Inertial (MCI) into Mars Body-Fixed (IAU_MARS)
+  const cosW = Math.cos(marsRotRad);
+  const sinW = Math.sin(marsRotRad);
+  return {
+    x: xMci * cosW + yMci * sinW,
+    y: -xMci * sinW + yMci * cosW,
+    z: zMci,
+    r,
+  };
+}
+
+function getOrbitalStateAtEpoch(
+  target: MarsTarget,
+  epochMs: number,
+  liveElements?: LiveOrbiterElements
+) {
+  const orbit = target.orbit!;
+  const altitudeMeters = liveElements?.altitudeMeters ?? orbit.altitudeMeters;
+  const e = liveElements?.eccentricity ?? 0.002;
+  const a = MARS_CONSTANTS.EQUATORIAL_RADIUS + altitudeMeters;
+  const incRad = ((liveElements?.inclinationDeg ?? orbit.inclinationDeg) * Math.PI) / 180;
+  const raan0Rad = ((liveElements?.raanDeg ?? orbit.raanDeg) * Math.PI) / 180;
+  const argPeri0Rad = ((liveElements?.argPeriapsisDeg ?? 0) * Math.PI) / 180;
+  const ma0Rad = ((liveElements?.meanAnomalyAtEpochDeg ?? orbit.initialPhaseDeg) * Math.PI) / 180;
+  const refEpochMs = liveElements?.epochMs ?? DEFAULT_ORBIT_EPOCH_MS;
+
+  const n = Math.sqrt(MARS_CONSTANTS.MU_MARS / Math.pow(a, 3));
+  const dtSec = (epochMs - refEpochMs) / 1000;
+
+  const p = a * (1 - e * e);
+  const j2Factor = n * MARS_J2 * Math.pow(MARS_CONSTANTS.EQUATORIAL_RADIUS / p, 2);
+  const raanRate = -1.5 * j2Factor * Math.cos(incRad);
+  const argPeriRate = 0.75 * j2Factor * (5 * Math.cos(incRad) * Math.cos(incRad) - 1);
 
   return {
-    x,
-    y,
-    z,
-    latDeg,
-    lonDeg,
-    altKm: orbit.altitudeMeters / 1000,
+    a,
+    e,
+    incRad,
+    raanRad: raan0Rad + raanRate * dtSec,
+    argPeriRad: argPeri0Rad + argPeriRate * dtSec,
+    meanAnomalyRad: ma0Rad + n * dtSec,
+    marsRotRad: getMarsRotationRad(epochMs),
   };
 }
 
 /**
- * Samples a full 360-degree orbital ring or trailing arc for a satellite.
+ * Computes 3D Cartesian position in the Mars Body-Fixed (IAU_MARS) frame
+ * at the given UTC epoch timestamp (ms), accounting for Keplerian motion,
+ * J2 nodal/apsidal precession, and Mars's sidereal rotation.
+ */
+export function computeSatelliteCartesian(
+  target: MarsTarget,
+  epochMs: number = Date.now(),
+  liveElements?: LiveOrbiterElements
+): { x: number; y: number; z: number; latDeg: number; lonDeg: number; altKm: number; velocityKmS: number } {
+  const effectiveMs = epochMs > 0 ? epochMs : Date.now();
+  const state = getOrbitalStateAtEpoch(target, effectiveMs, liveElements);
+  const pt = propagateOrbitPoint(
+    state.a,
+    state.e,
+    state.incRad,
+    state.raanRad,
+    state.argPeriRad,
+    state.meanAnomalyRad,
+    state.marsRotRad
+  );
+
+  const latDeg = (Math.asin(Math.max(-1, Math.min(1, pt.z / pt.r))) * 180) / Math.PI;
+  const lonDeg = (Math.atan2(pt.y, pt.x) * 180) / Math.PI;
+  const altKm = (pt.r - MARS_CONSTANTS.EQUATORIAL_RADIUS) / 1000;
+  const velocityKmS = Math.sqrt(MARS_CONSTANTS.MU_MARS * (2 / pt.r - 1 / state.a)) / 1000;
+
+  return {
+    x: pt.x,
+    y: pt.y,
+    z: pt.z,
+    latDeg,
+    lonDeg,
+    altKm,
+    velocityKmS,
+  };
+}
+
+/**
+ * Samples a full 360-degree orbital ring or trailing arc for a satellite
+ * aligned to the instantaneous inertial orbital plane in Mars body-fixed coordinates.
  */
 export function sampleSatelliteOrbitArc(
   target: MarsTarget,
-  simElapsedSeconds: number,
+  epochMs: number = Date.now(),
   arcDegrees = 360,
   steps = 128,
-  trailingOnly = false
+  trailingOnly = false,
+  liveElements?: LiveOrbiterElements
 ): Array<{ x: number; y: number; z: number }> {
-  const orbit = target.orbit!;
-  const radius = MARS_CONSTANTS.EQUATORIAL_RADIUS + orbit.altitudeMeters;
-  const omega = Math.sqrt(MARS_CONSTANTS.MU_MARS / Math.pow(radius, 3));
-
-  const incRad = (orbit.inclinationDeg * Math.PI) / 180;
-  const raanRad = (orbit.raanDeg * Math.PI) / 180;
-  const phase0Rad = (orbit.initialPhaseDeg * Math.PI) / 180;
-  const currentTheta = phase0Rad + omega * simElapsedSeconds;
-
-  const cosO = Math.cos(raanRad);
-  const sinO = Math.sin(raanRad);
-  const cosI = Math.cos(incRad);
-  const sinI = Math.sin(incRad);
-
+  const effectiveMs = epochMs > 0 ? epochMs : Date.now();
+  const state = getOrbitalStateAtEpoch(target, effectiveMs, liveElements);
   const arcRad = (arcDegrees * Math.PI) / 180;
   const points: Array<{ x: number; y: number; z: number }> = [];
 
   for (let i = 0; i <= steps; i++) {
     const frac = i / steps;
-    const theta = trailingOnly
-      ? currentTheta - arcRad * (1 - frac)
-      : currentTheta + arcRad * frac;
-    const cosT = Math.cos(theta);
-    const sinT = Math.sin(theta);
-    points.push({
-      x: radius * (cosO * cosT - sinO * sinT * cosI),
-      y: radius * (sinO * cosT + cosO * sinT * cosI),
-      z: radius * (sinT * sinI),
-    });
+    const meanAnomaly = trailingOnly
+      ? state.meanAnomalyRad - arcRad * (1 - frac)
+      : state.meanAnomalyRad + arcRad * frac;
+    const pt = propagateOrbitPoint(
+      state.a,
+      state.e,
+      state.incRad,
+      state.raanRad,
+      state.argPeriRad,
+      meanAnomaly,
+      state.marsRotRad
+    );
+    points.push({ x: pt.x, y: pt.y, z: pt.z });
   }
   return points;
 }
@@ -132,37 +218,37 @@ export function sampleSatelliteOrbitArc(
  * Generates crisp, color-coded glowing SVG billboard icons (data URI) for Cesium pins.
  */
 export function createGlowPinDataUri(colorHex: string, category: TargetCategory, selected = false): string {
-  const size = selected ? 60 : 48;
+  const size = selected ? 30 : 24;
   const center = size / 2;
-  const ringRadius = selected ? 17 : 13;
+  const ringRadius = selected ? 8.5 : 6.5;
 
   let innerShape = '';
   if (category === 'rover') {
-    // Precision diamond-rover reticle
-    innerShape = `<polygon points="${center},${center - 7} ${center + 7},${center} ${center},${center + 7} ${center - 7},${center}" fill="${colorHex}" stroke="#FFFFFF" stroke-width="1.5"/>`;
+    // Precision diamond-rover reticle (half radius)
+    innerShape = `<polygon points="${center},${center - 3.6} ${center + 3.6},${center} ${center},${center + 3.6} ${center - 3.6},${center}" fill="${colorHex}" stroke="#FFFFFF" stroke-width="0.9"/>`;
   } else if (category === 'satellite') {
-    // Orbital spacecraft cross-wing glyph
+    // Orbital spacecraft cross-wing glyph (half radius)
     innerShape = `
-      <rect x="${center - 11}" y="${center - 2.5}" width="22" height="5" rx="1.5" fill="${colorHex}" stroke="#FFFFFF" stroke-width="1.1"/>
-      <circle cx="${center}" cy="${center}" r="4.5" fill="#0B0F17" stroke="#FFFFFF" stroke-width="1.5"/>
-      <circle cx="${center}" cy="${center}" r="2" fill="${colorHex}"/>
+      <rect x="${center - 5.5}" y="${center - 1.3}" width="11" height="2.6" rx="0.8" fill="${colorHex}" stroke="#FFFFFF" stroke-width="0.7"/>
+      <circle cx="${center}" cy="${center}" r="2.3" fill="#0B0F17" stroke="#FFFFFF" stroke-width="0.9"/>
+      <circle cx="${center}" cy="${center}" r="1.0" fill="${colorHex}"/>
     `;
   } else {
-    // Landmark triangle summit beacon
-    innerShape = `<polygon points="${center},${center - 8} ${center + 7.5},${center + 5.5} ${center - 7.5},${center + 5.5}" fill="${colorHex}" stroke="#FFFFFF" stroke-width="1.5"/>`;
+    // Landmark triangle summit beacon (half radius)
+    innerShape = `<polygon points="${center},${center - 4} ${center + 3.8},${center + 2.8} ${center - 3.8},${center + 2.8}" fill="${colorHex}" stroke="#FFFFFF" stroke-width="0.9"/>`;
   }
 
   const svg = `
     <svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
       <defs>
         <radialGradient id="glow" cx="50%" cy="50%" r="50%">
-          <stop offset="0%" stop-color="${colorHex}" stop-opacity="0.78"/>
-          <stop offset="55%" stop-color="${colorHex}" stop-opacity="0.22"/>
+          <stop offset="0%" stop-color="${colorHex}" stop-opacity="0.8"/>
+          <stop offset="55%" stop-color="${colorHex}" stop-opacity="0.24"/>
           <stop offset="100%" stop-color="${colorHex}" stop-opacity="0"/>
         </radialGradient>
       </defs>
-      <circle cx="${center}" cy="${center}" r="${center - 2}" fill="url(#glow)"/>
-      <circle cx="${center}" cy="${center}" r="${ringRadius}" fill="#07090E" fill-opacity="0.72" stroke="${colorHex}" stroke-width="${selected ? 2.4 : 1.75}"/>
+      <circle cx="${center}" cy="${center}" r="${center - 1}" fill="url(#glow)"/>
+      <circle cx="${center}" cy="${center}" r="${ringRadius}" fill="#07090E" fill-opacity="0.78" stroke="${colorHex}" stroke-width="${selected ? 1.5 : 1.1}"/>
       ${innerShape}
     </svg>
   `.trim();
@@ -176,8 +262,21 @@ const satelliteSpriteCache = new Map<string, string>();
  * Draws high-resolution (256x256 transparent PNG data URL) top-down/isometric
  * spacecraft illustrations for MRO and MAVEN so close-up inspection never fails from CORS.
  */
+function getSatelliteSpriteKey(satelliteId: string): string {
+  if (satelliteId === 'mro' || satelliteId === 'imager-i-map') return 'mro';
+  if (satelliteId === 'odyssey' || satelliteId === 'mars-observer' || satelliteId === 'mars-climate-orbiter') return 'odyssey';
+  if (satelliteId === 'mars-express' || satelliteId === 'msr-ero') return 'mars-express';
+  if (satelliteId === 'tgo' || satelliteId === 'tianwen-1' || satelliteId === 'mmx-orbiter') return 'tgo';
+  if (satelliteId === 'hope' || satelliteId === 'mars-relay-eq1' || satelliteId === 'mars-relay-polar') return 'hope';
+  if (satelliteId === 'mgs') return 'mgs';
+  if (satelliteId === 'viking-1-orbiter' || satelliteId === 'viking-2-orbiter' || satelliteId === 'mariner-9') return 'viking-1-orbiter';
+  if (satelliteId === 'mangalyaan' || satelliteId === 'phobos-2' || satelliteId === 'nozomi') return 'mangalyaan';
+  return 'maven';
+}
+
 export function createSatelliteSprite(satelliteId: string): string {
-  const cached = satelliteSpriteCache.get(satelliteId);
+  const spriteKey = getSatelliteSpriteKey(satelliteId);
+  const cached = satelliteSpriteCache.get(spriteKey);
   if (cached) return cached;
 
   const size = 256;
@@ -199,22 +298,28 @@ export function createSatelliteSprite(satelliteId: string): string {
   ctx.fillStyle = halo;
   ctx.fillRect(0, 0, size, size);
 
-  if (satelliteId === 'mro') {
+  if (spriteKey === 'mro') {
     drawMroSpacecraft(ctx, cx, cy);
-  } else if (satelliteId === 'odyssey') {
+  } else if (spriteKey === 'odyssey') {
     drawOdysseySpacecraft(ctx, cx, cy);
-  } else if (satelliteId === 'mars-express') {
+  } else if (spriteKey === 'mars-express') {
     drawMarsExpressSpacecraft(ctx, cx, cy);
-  } else if (satelliteId === 'tgo') {
+  } else if (spriteKey === 'tgo') {
     drawTgoSpacecraft(ctx, cx, cy);
-  } else if (satelliteId === 'hope') {
+  } else if (spriteKey === 'hope') {
     drawHopeSpacecraft(ctx, cx, cy);
+  } else if (spriteKey === 'mgs') {
+    drawMgsSpacecraft(ctx, cx, cy);
+  } else if (spriteKey === 'viking-1-orbiter') {
+    drawVikingOrbiterSpacecraft(ctx, cx, cy);
+  } else if (spriteKey === 'mangalyaan') {
+    drawMangalyaanSpacecraft(ctx, cx, cy);
   } else {
     drawMavenSpacecraft(ctx, cx, cy);
   }
 
   const dataUrl = canvas.toDataURL('image/png');
-  satelliteSpriteCache.set(satelliteId, dataUrl);
+  satelliteSpriteCache.set(spriteKey, dataUrl);
   return dataUrl;
 }
 
@@ -914,8 +1019,24 @@ const roverSpriteCache = new Map<string, string>();
  * Draws high-resolution (256x256 transparent PNG data URL) realistic top-down/isometric
  * sprites for all Mars rovers and stationary landers sitting on the Martian surface.
  */
+function getRoverSpriteKey(roverId: string): string {
+  if (roverId === 'ingenuity') return 'ingenuity';
+  if (roverId === 'zhurong' || roverId === 'rosalind-franklin') return 'zhurong';
+  if (roverId === 'opportunity' || roverId === 'spirit' || roverId === 'opportunity-victoria' || roverId === 'spirit-homeplate') return 'opportunity';
+  if (roverId === 'insight') return 'insight';
+  if (roverId === 'phoenix' || roverId === 'mars-polar-lander') return 'phoenix';
+  if (roverId === 'viking-1' || roverId === 'viking-2' || roverId === 'arcadia-human-probe' || roverId === 'deuteronilus-human-probe' || roverId === 'phlegra-human-probe' || roverId === 'melas-human-probe') return 'viking-1';
+  if (roverId === 'beagle-2') return 'beagle-2';
+  if (roverId === 'mars-3' || roverId === 'mars-2' || roverId === 'mars-6') return 'mars-3';
+  if (roverId === 'schiaparelli' || roverId === 'tianwen-3-site' || roverId === 'maw-human-probe' || roverId === 'isidis-ne-syrtis-probe' || roverId === 'midway-jezero-probe') return 'schiaparelli';
+  if (roverId === 'pathfinder') return 'pathfinder';
+  if (roverId === 'curiosity' || roverId === 'msl-mount-sharp') return 'curiosity';
+  return 'perseverance';
+}
+
 export function createRoverSprite(roverId: string): string {
-  const cached = roverSpriteCache.get(roverId);
+  const spriteKey = getRoverSpriteKey(roverId);
+  const cached = roverSpriteCache.get(spriteKey);
   if (cached) return cached;
 
   const size = 256;
@@ -937,15 +1058,17 @@ export function createRoverSprite(roverId: string): string {
   ctx.fillStyle = shadow;
   ctx.fillRect(0, 0, size, size);
 
-  drawSurfaceCraftById(ctx, cx, cy, roverId);
+  drawSurfaceCraftById(ctx, cx, cy, spriteKey);
 
   const dataUrl = canvas.toDataURL('image/png');
-  roverSpriteCache.set(roverId, dataUrl);
+  roverSpriteCache.set(spriteKey, dataUrl);
   return dataUrl;
 }
 
 function drawSurfaceCraftById(ctx: CanvasRenderingContext2D, cx: number, cy: number, id: string) {
-  if (id === 'zhurong') {
+  if (id === 'ingenuity') {
+    drawIngenuityHelicopter(ctx, cx, cy);
+  } else if (id === 'zhurong') {
     drawZhurongRover(ctx, cx, cy);
   } else if (id === 'opportunity' || id === 'spirit') {
     drawMerRover(ctx, cx, cy);
@@ -964,6 +1087,65 @@ function drawSurfaceCraftById(ctx: CanvasRenderingContext2D, cx: number, cy: num
   } else {
     drawNasaMarsRover(ctx, cx, cy, id === 'curiosity' ? 'curiosity' : 'perseverance');
   }
+}
+
+function drawIngenuityHelicopter(ctx: CanvasRenderingContext2D, cx: number, cy: number) {
+  ctx.save();
+  ctx.translate(cx, cy);
+
+  // Four slender carbon-fiber landing legs
+  ctx.strokeStyle = '#cbd5e1';
+  ctx.lineWidth = 2.6;
+  for (const [lx, ly] of [[-38, -32], [38, -32], [-38, 32], [38, 32]]) {
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(lx, ly);
+    ctx.stroke();
+    ctx.fillStyle = '#0f172a';
+    ctx.beginPath();
+    ctx.arc(lx, ly, 4, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Coaxial counter-rotating carbon-fiber rotor blades
+  ctx.save();
+  ctx.rotate(-0.35);
+  ctx.fillStyle = '#1e293b';
+  ctx.strokeStyle = '#94a3b8';
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  ctx.roundRect(-96, -7, 192, 14, 5);
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+
+  ctx.save();
+  ctx.rotate(0.55);
+  ctx.fillStyle = '#0f172a';
+  ctx.strokeStyle = '#64748b';
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  ctx.roundRect(-90, -6, 180, 12, 5);
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+
+  // Gold foil central fuselage box + top solar panel
+  ctx.fillStyle = '#eab308';
+  ctx.strokeStyle = '#fef08a';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.roundRect(-18, -14, 36, 28, 4);
+  ctx.fill();
+  ctx.stroke();
+
+  drawSolarPanelGrid(ctx, -28, -9, 56, 18, 4, 2);
+
+  ctx.fillStyle = '#f8fafc';
+  ctx.beginPath();
+  ctx.arc(0, 0, 5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
 }
 
 function drawBeagle2Lander(ctx: CanvasRenderingContext2D, cx: number, cy: number) {

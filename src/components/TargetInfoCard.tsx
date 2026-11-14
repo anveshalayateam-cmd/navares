@@ -1,19 +1,23 @@
-import { CloudSun, Crosshair, X } from 'lucide-react';
+import { CloudSun, Crosshair, Radio, Satellite, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { CATEGORY_COLORS, CATEGORY_LABELS, MarsTarget, TelemetryMode } from '../data/marsData';
+import { LiveOrbiterElements } from '../services/marsOrbiterSync';
+import { RoverTelemetryFix, formatUtcTimestamp } from '../services/marsRoverTelemetry';
 import { MarsWeatherStation } from '../services/marsWeather';
 import { createTargetPhotoFallback, formatLatLon } from '../utils/marsMath';
 import {
   formatMarsSurfaceTempC,
   getMarsSurfaceTempSample,
 } from '../utils/marsOverlayMaps';
-import { MARS_FEATURE_OUTLINES } from '../data/marsFeatureOutlines';
+import { formatLocationAreaKm2, getLocationAreaInfo } from '../data/marsFeatureOutlines';
 import { LiveSatellitePosition } from './MarsGlobe';
 
 interface TargetInfoCardProps {
   target: MarsTarget;
   temperatureLs: number;
   liveSatellite?: LiveSatellitePosition;
+  liveRover?: RoverTelemetryFix;
+  liveOrbiter?: LiveOrbiterElements;
   weatherEnabled?: boolean;
   weatherStation?: MarsWeatherStation;
   telemetryMode: TelemetryMode;
@@ -26,6 +30,8 @@ export function TargetInfoCard({
   target,
   temperatureLs,
   liveSatellite,
+  liveRover,
+  liveOrbiter,
   weatherEnabled,
   weatherStation,
   telemetryMode,
@@ -40,23 +46,34 @@ export function TargetInfoCard({
   }, [target.id, target.photoUrl]);
 
   const categoryColor = CATEGORY_COLORS[target.category];
+  const displayLat =
+    target.category === 'satellite' && liveSatellite
+      ? liveSatellite.latDeg
+      : target.category === 'rover' && liveRover
+        ? liveRover.latitude
+        : target.latitude;
+  const displayLon =
+    target.category === 'satellite' && liveSatellite
+      ? liveSatellite.lonDeg
+      : target.category === 'rover' && liveRover
+        ? liveRover.longitude
+        : target.longitude;
+
   const coordinatesText =
     target.category === 'satellite' && liveSatellite
       ? formatLatLon(liveSatellite.latDeg, liveSatellite.lonDeg, 3)
-      : formatLatLon(target.latitude, target.longitude, 4);
+      : formatLatLon(displayLat, displayLon, 4);
 
   const elevationText =
     target.category === 'satellite' && liveSatellite
-      ? `${liveSatellite.altKm.toFixed(0)} km Orbit · ${target.orbit?.inclinationDeg}° Inc`
-      : target.elevationLabel;
+      ? `${liveSatellite.altKm.toFixed(0)} km Orbit · ${(liveOrbiter?.inclinationDeg ?? target.orbit?.inclinationDeg ?? 0).toFixed(1)}° Inc · ${liveSatellite.velocityKmS.toFixed(2)} km/s`
+      : target.category === 'rover' && liveRover
+        ? `${liveRover.elevationMeters > 0 ? '+' : ''}${liveRover.elevationMeters.toLocaleString()} m${liveRover.sol ? ` · Sol ${liveRover.sol}` : ''}`
+        : target.elevationLabel;
 
-  const surfaceTempLat =
-    target.category === 'satellite' && liveSatellite ? liveSatellite.latDeg : target.latitude;
-  const surfaceTempLon =
-    target.category === 'satellite' && liveSatellite ? liveSatellite.lonDeg : target.longitude;
-  const tesSample = getMarsSurfaceTempSample(surfaceTempLat, surfaceTempLon, temperatureLs);
+  const tesSample = getMarsSurfaceTempSample(displayLat, displayLon, temperatureLs);
   const tesSurfaceTemp = formatMarsSurfaceTempC(tesSample?.tempC ?? null);
-  const featureOutline = MARS_FEATURE_OUTLINES[target.id as keyof typeof MARS_FEATURE_OUTLINES];
+  const locationArea = getLocationAreaInfo(target);
 
   const radiationColorClass =
     target.radiationSeverity === 'critical'
@@ -91,9 +108,9 @@ export function TargetInfoCard({
             {target.name}
           </h2>
           <p className="text-xs text-slate-400">{target.region}</p>
-          {featureOutline && (
-            <p className="mt-1 text-[10px] leading-snug text-cyan-200/80">
-              Terrain footprint highlighted · approximate USGS/IAU boundary
+          {locationArea && (
+            <p className="mt-1 text-[10px] leading-snug text-cyan-200/85">
+              Area highlighted on globe · {formatLocationAreaKm2(locationArea.areaKm2)}
             </p>
           )}
         </div>
@@ -139,12 +156,20 @@ export function TargetInfoCard({
           </div>
           <div className="flex items-baseline justify-between gap-3">
             <dt className="text-slate-400 shrink-0">
-              {target.category === 'satellite' ? 'Altitude' : 'Elevation'}
+              {target.category === 'satellite' ? 'Orbit' : 'Elevation'}
             </dt>
             <dd className="font-mono-tabular font-medium text-cyan-300 text-right">
               {elevationText}
             </dd>
           </div>
+          {locationArea && (
+            <div className="flex items-baseline justify-between gap-3">
+              <dt className="text-slate-400 shrink-0">Assigned Area</dt>
+              <dd className="font-mono-tabular font-medium text-cyan-200 text-right">
+                {formatLocationAreaKm2(locationArea.areaKm2)} · {locationArea.dimensionLabel}
+              </dd>
+            </div>
+          )}
           <div className="flex items-baseline justify-between gap-3">
             <dt className="text-slate-400 shrink-0">
               {target.category === 'satellite' ? 'NASA TES at subpoint' : 'NASA TES daytime sample'}
@@ -175,6 +200,41 @@ export function TargetInfoCard({
           </div>
         </dl>
 
+        {/* Active Rover Live Telemetry / Offline Cache Fallback Banner */}
+        {target.category === 'rover' && liveRover && (
+          <div
+            className={`rounded-xl border p-2.5 text-[11px] space-y-1 ${
+              liveRover.status === 'live'
+                ? 'border-emerald-400/25 bg-emerald-500/[0.07] text-emerald-100'
+                : 'border-amber-400/25 bg-amber-500/[0.07] text-amber-100'
+            }`}
+          >
+            <div className="flex items-center justify-between gap-2">
+              <span className="inline-flex items-center gap-1.5 font-semibold">
+                <Radio
+                  className={`h-3.5 w-3.5 ${
+                    liveRover.status === 'live' ? 'text-emerald-400' : 'text-amber-300'
+                  }`}
+                  aria-hidden="true"
+                />
+                {liveRover.status === 'live'
+                  ? 'Live NASA/JPL Rover Position'
+                  : 'Last Known Position (Cached Fallback)'}
+              </span>
+              {liveRover.totalDriveKm !== undefined && (
+                <span className="font-mono-tabular text-[10px] text-slate-300">
+                  {liveRover.totalDriveKm.toFixed(1)} km driven
+                </span>
+              )}
+            </div>
+            <p className="font-mono-tabular text-[10px] text-slate-300">
+              {liveRover.status === 'live'
+                ? `Updated: ${formatUtcTimestamp(liveRover.recordedAtUtc)}`
+                : `Last known position: ${formatUtcTimestamp(liveRover.recordedAtUtc)}`}
+            </p>
+          </div>
+        )}
+
         {/* Live/Calibrated Local Weather Telemetry when Weather Overlay is ON */}
         {weatherEnabled && weatherStation && (
           <div className="rounded-xl border border-cyan-400/25 bg-cyan-500/[0.06] p-3 space-y-1.5 text-xs">
@@ -195,37 +255,52 @@ export function TargetInfoCard({
           </div>
         )}
 
-        {/* Satellite-only 1x / 100x Orbit Speed Toggle */}
+        {/* Satellite-only Real-Time UTC Sync & 1x / 100x Orbit Speed Toggle */}
         {target.category === 'satellite' && (
-          <div className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2">
-            <span className="text-xs text-slate-300">Orbit Speed</span>
-            <div
-              role="group"
-              aria-label="Satellite orbit simulation speed"
-              className="flex items-center gap-1 rounded-full bg-black/40 p-0.5 border border-white/10"
-            >
-              <button
-                type="button"
-                onClick={() => onChangeTelemetryMode('realtime')}
-                className={`rounded-full px-2.5 py-1 text-[11px] font-mono-tabular font-medium transition-colors cursor-pointer ${
-                  telemetryMode === 'realtime'
-                    ? 'bg-slate-700 text-white'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
+          <div className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 space-y-2">
+            <div className="flex items-center justify-between gap-2 text-[10px] text-cyan-200/90">
+              <span className="inline-flex items-center gap-1.5 font-medium">
+                <Satellite className="h-3 w-3 text-cyan-300" aria-hidden="true" />
+                {liveOrbiter?.source === 'jpl-horizons'
+                  ? 'Synced · JPL Horizons UTC'
+                  : liveOrbiter?.source === 'cached-ephemeris'
+                    ? 'Synced · Cached Horizons UTC'
+                    : 'Synced · IAU_MARS Real-Time UTC'}
+              </span>
+              <span className="font-mono-tabular text-slate-400">
+                {telemetryMode === 'realtime' ? 'Live 1x' : 'Sim 100x'}
+              </span>
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-xs text-slate-300">Orbit Speed</span>
+              <div
+                role="group"
+                aria-label="Satellite orbit simulation speed"
+                className="flex items-center gap-1 rounded-full bg-black/40 p-0.5 border border-white/10"
               >
-                1x
-              </button>
-              <button
-                type="button"
-                onClick={() => onChangeTelemetryMode('simulation100x')}
-                className={`rounded-full px-2.5 py-1 text-[11px] font-mono-tabular font-medium transition-colors cursor-pointer ${
-                  telemetryMode === 'simulation100x'
-                    ? 'bg-cyan-500 text-slate-950 font-semibold'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                100x
-              </button>
+                <button
+                  type="button"
+                  onClick={() => onChangeTelemetryMode('realtime')}
+                  className={`rounded-full px-2.5 py-1 text-[11px] font-mono-tabular font-medium transition-colors cursor-pointer ${
+                    telemetryMode === 'realtime'
+                      ? 'bg-slate-700 text-white'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  1x
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onChangeTelemetryMode('simulation100x')}
+                  className={`rounded-full px-2.5 py-1 text-[11px] font-mono-tabular font-medium transition-colors cursor-pointer ${
+                    telemetryMode === 'simulation100x'
+                      ? 'bg-cyan-500 text-slate-950 font-semibold'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  100x
+                </button>
+              </div>
             </div>
           </div>
         )}

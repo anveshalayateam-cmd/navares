@@ -2,11 +2,10 @@ import { sampleMarsElevationMeters } from '../data/marsData';
 import { NASA_TES_TEMPERATURE_GRID } from '../data/marsTesTemperatureGrid';
 
 /**
- * Computes calibrated surface radiation dose (mSv/day) at (lonDeg, latDeg)
+ * Computes calibrated surface radiation dose (mSv/day) from surface elevation (meters)
  * using Martian atmospheric column shielding calibrated to Curiosity MSL RAD (~0.64 mSv/day).
  */
-export function computeSurfaceRadiationDose(lonDeg: number, latDeg: number): number {
-  const elevMeters = sampleMarsElevationMeters(lonDeg, latDeg);
+export function computeSurfaceRadiationDoseFromElev(elevMeters: number): number {
   const scaleHeightMeters = 11100;
   const relPressure = Math.exp(-elevMeters / scaleHeightMeters);
   const shieldingFactor = Math.exp(-0.44 * relPressure);
@@ -14,7 +13,15 @@ export function computeSurfaceRadiationDose(lonDeg: number, latDeg: number): num
   return Math.max(0.2, Math.min(1.28, rawDose));
 }
 
-function doseToBlackGreenRgb(dose: number): [number, number, number] {
+/**
+ * Computes calibrated surface radiation dose (mSv/day) at (lonDeg, latDeg)
+ * using Martian atmospheric column shielding calibrated to Curiosity MSL RAD (~0.64 mSv/day).
+ */
+export function computeSurfaceRadiationDose(lonDeg: number, latDeg: number): number {
+  return computeSurfaceRadiationDoseFromElev(sampleMarsElevationMeters(lonDeg, latDeg));
+}
+
+export function doseToBlackGreenRgb(dose: number): [number, number, number] {
   const tRaw = Math.max(0, Math.min(1, (dose - 0.36) / (1.14 - 0.36)));
   const t = Math.pow(tRaw, 1.35);
 
@@ -107,6 +114,86 @@ const annualGrid: SampleGrid = {
     weight > 0 ? Math.round((annualTimeSums[cell] / weight) * 10) / 10 : null
   ),
 };
+
+// Cached dense Float32Array lookup grids per season index for O(1) bilinear LOD tile rendering
+const seasonalDenseTempCache = new Map<number, Float32Array>();
+
+function getSeasonalDenseTempGrid(seasonIndex: number): Float32Array {
+  const cached = seasonalDenseTempCache.get(seasonIndex);
+  if (cached) return cached;
+
+  const season = NASA_TES_TEMPERATURE_GRID.seasons[seasonIndex];
+  const arr = new Float32Array(CELL_COUNT);
+  for (let cell = 0; cell < CELL_COUNT; cell++) {
+    const sTemp = season.temperatureC[cell];
+    const sCount = season.sampleCount[cell];
+    if (sTemp !== null && sCount > 0) {
+      arr[cell] = sTemp;
+    } else {
+      const aTemp = annualGrid.temperatureC[cell];
+      arr[cell] = aTemp !== null && annualGrid.sampleCount[cell] > 0 ? aTemp : Number.NaN;
+    }
+  }
+  seasonalDenseTempCache.set(seasonIndex, arr);
+  return arr;
+}
+
+/**
+ * O(1) smooth bilinear TES surface temperature sampler for multi-resolution tile pyramids.
+ * Returns null where surrounding TES cells have no quality-screened observations.
+ */
+export function sampleTesTemperatureFast(
+  lat: number,
+  lon: number,
+  solarLongitudeLs = 0
+): number | null {
+  const seasonIndex = seasonIndexForLs(solarLongitudeLs);
+  const grid = getSeasonalDenseTempGrid(seasonIndex);
+
+  const clampedLat = Math.max(-89.999, Math.min(89.999, lat));
+  const wrappedLon = wrapLongitude(lon);
+
+  // Continuous cell-center coordinates in [0..LON_CELLS) and [0..LAT_CELLS)
+  const fx = (wrappedLon + 180) / GRID_DEGREES - 0.5;
+  const fy = (clampedLat + 90) / GRID_DEGREES - 0.5;
+
+  const x0 = Math.floor(fx);
+  const y0 = Math.max(0, Math.min(LAT_CELLS - 1, Math.floor(fy)));
+  const x1 = x0 + 1;
+  const y1 = Math.max(0, Math.min(LAT_CELLS - 1, y0 + 1));
+
+  const tx = fx - x0;
+  const ty = Math.max(0, Math.min(1, fy - y0));
+
+  const ix0 = ((x0 % LON_CELLS) + LON_CELLS) % LON_CELLS;
+  const ix1 = ((x1 % LON_CELLS) + LON_CELLS) % LON_CELLS;
+
+  const v00 = grid[y0 * LON_CELLS + ix0];
+  const v10 = grid[y0 * LON_CELLS + ix1];
+  const v01 = grid[y1 * LON_CELLS + ix0];
+  const v11 = grid[y1 * LON_CELLS + ix1];
+
+  const weights = [
+    (1 - tx) * (1 - ty),
+    tx * (1 - ty),
+    (1 - tx) * ty,
+    tx * ty,
+  ];
+  const vals = [v00, v10, v01, v11];
+
+  let sum = 0;
+  let wSum = 0;
+  for (let i = 0; i < 4; i++) {
+    if (!Number.isNaN(vals[i])) {
+      sum += vals[i] * weights[i];
+      wSum += weights[i];
+    }
+  }
+
+  // Keep areas with zero nearby valid observations transparent
+  if (wSum < 0.25) return null;
+  return sum / wSum;
+}
 
 function wrapLongitude(lon: number): number {
   return ((lon + 180) % 360 + 360) % 360 - 180;
@@ -231,7 +318,7 @@ export function formatMarsSurfaceTempC(tempC: number | null): string {
   return `${rounded > 0 ? '+' : ''}${rounded}°C`;
 }
 
-function tempToRainbowRgb(tempC: number): [number, number, number] {
+export function tempToRainbowRgb(tempC: number): [number, number, number] {
   const temp = Math.max(-125, Math.min(20, tempC));
   for (let i = 0; i < TEMPERATURE_COLOR_STOPS.length - 1; i++) {
     const [temp0, color0] = TEMPERATURE_COLOR_STOPS[i];
@@ -248,7 +335,7 @@ function tempToRainbowRgb(tempC: number): [number, number, number] {
   return [255, 0, 0];
 }
 
-function elevationToGrayscaleRgb(elevMeters: number): [number, number, number] {
+export function elevationToGrayscaleRgb(elevMeters: number): [number, number, number] {
   // -8000 m -> 0 (#000000), 0 m -> ~128 (#808080), +21000 m -> 255 (#FFFFFF)
   let norm: number;
   if (elevMeters <= 0) {

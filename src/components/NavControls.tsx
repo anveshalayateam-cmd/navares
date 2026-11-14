@@ -1,5 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import { Minus, Plus, RotateCcw, Route, Ruler } from 'lucide-react';
+import {
+  Minus,
+  Plus,
+  Route,
+  Ruler,
+  SunMoon,
+  X,
+} from 'lucide-react';
 
 interface NavControlsProps {
   headingRad: number;
@@ -8,11 +15,14 @@ interface NavControlsProps {
   measureMode: boolean;
   routeMode: boolean;
   sunShadowEnabled: boolean;
+  shadowsAllowed?: boolean;
   onToggleMeasure: () => void;
   onToggle3DView: () => void;
   onToggleRouteMode: () => void;
-  onZoomIn: () => void;
-  onZoomOut: () => void;
+  onStartZoomIn: () => void;
+  onStartZoomOut: () => void;
+  onStopZoom: () => void;
+  onWheelZoom: (deltaY: number) => void;
   onResetNorth: () => void;
   onResetGlobe: () => void;
   onSetTilt: (tiltDeg: number) => void;
@@ -20,19 +30,48 @@ interface NavControlsProps {
   onToggleSunShadow: () => void;
 }
 
-function CompassRose({ headingDeg }: { headingDeg: number }) {
+function CompassRose({ headingDeg, active }: { headingDeg: number; active: boolean }) {
   return (
     <svg
       viewBox="0 0 40 40"
-      className="h-7 w-7 transition-transform duration-100"
+      className="h-7 w-7 transition-transform duration-75"
       style={{ transform: `rotate(${-headingDeg}deg)` }}
       aria-hidden="true"
     >
-      <circle cx="20" cy="20" r="17.5" fill="#101722" stroke="rgba(255,255,255,.28)" strokeWidth="1.5" />
-      <path d="M20 5.5 25.1 20 20 18.1 14.9 20 20 5.5Z" fill="#fb4b4b" stroke="#ffd0d0" strokeWidth=".65" />
-      <path d="M20 34.5 14.9 20 20 21.9 25.1 20 20 34.5Z" fill="#e5edf6" stroke="#fff" strokeWidth=".65" />
-      <circle cx="20" cy="20" r="2.2" fill="#fff" stroke="#334155" strokeWidth=".8" />
-      <text x="20" y="10.2" textAnchor="middle" fontSize="4.6" fontWeight="700" fill="#fff">N</text>
+      <circle
+        cx="20"
+        cy="20"
+        r="17.5"
+        fill={active ? 'rgba(56, 189, 248, 0.14)' : '#101722'}
+        stroke={active ? 'rgba(103, 232, 249, 0.7)' : 'rgba(255,255,255,0.28)'}
+        strokeWidth="1.5"
+      />
+      <path d="M20 5.5 25.1 20 20 18.1 14.9 20 20 5.5Z" fill="#ef4444" stroke="#fecaca" strokeWidth=".6" />
+      <path d="M20 34.5 14.9 20 20 21.9 25.1 20 20 34.5Z" fill="#e2e8f0" stroke="#ffffff" strokeWidth=".6" />
+      <circle cx="20" cy="20" r="2.1" fill="#ffffff" stroke="#334155" strokeWidth=".8" />
+      <text x="20" y="10.2" textAnchor="middle" fontSize="4.6" fontWeight="700" fill="#ffffff">
+        N
+      </text>
+    </svg>
+  );
+}
+
+function ResetGlobeIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="h-4 w-4 shrink-0 transition-transform duration-300 group-hover/reset:-rotate-45 group-active/reset:-rotate-90"
+      aria-hidden="true"
+    >
+      <path d="M3 12a9 9 0 1 0 3.1-6.8L3 8" />
+      <path d="M3 3.5V8h4.5" />
+      <circle cx="12" cy="12" r="3.6" />
+      <path d="M8.6 12h6.8" />
     </svg>
   );
 }
@@ -44,11 +83,14 @@ export function NavControls({
   measureMode,
   routeMode,
   sunShadowEnabled,
+  shadowsAllowed = true,
   onToggleMeasure,
   onToggle3DView,
   onToggleRouteMode,
-  onZoomIn,
-  onZoomOut,
+  onStartZoomIn,
+  onStartZoomOut,
+  onStopZoom,
+  onWheelZoom,
   onResetNorth,
   onResetGlobe,
   onSetTilt,
@@ -56,11 +98,26 @@ export function NavControls({
   onToggleSunShadow,
 }: NavControlsProps) {
   const headingDeg = ((headingRad * 180) / Math.PI + 360) % 360;
+  const clampedTilt = Math.max(0, Math.min(80, Math.round(tiltDeg)));
+  const roundedHeading = Math.round(headingDeg) % 360;
   const isPerspectiveView = tiltDeg >= 2;
   const viewToggleLabel = isPerspectiveView ? '2D' : '3D';
   const isAltitudeLocked = cameraAltitudeMeters === null || cameraAltitudeMeters > 2_000_000;
   const [compassOpen, setCompassOpen] = useState(false);
   const compassRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const handleGlobalRelease = () => onStopZoom();
+    window.addEventListener('pointerup', handleGlobalRelease);
+    window.addEventListener('pointercancel', handleGlobalRelease);
+    window.addEventListener('blur', handleGlobalRelease);
+    return () => {
+      window.removeEventListener('pointerup', handleGlobalRelease);
+      window.removeEventListener('pointercancel', handleGlobalRelease);
+      window.removeEventListener('blur', handleGlobalRelease);
+      onStopZoom();
+    };
+  }, [onStopZoom]);
 
   useEffect(() => {
     if (!compassOpen) return;
@@ -77,6 +134,9 @@ export function NavControls({
       document.removeEventListener('keydown', dismissEscape);
     };
   }, [compassOpen]);
+
+  const tiltPercent = (clampedTilt / 80) * 100;
+  const headingPercent = (roundedHeading / 360) * 100;
 
   return (
     <div
@@ -131,7 +191,11 @@ export function NavControls({
           disabled={isAltitudeLocked}
           aria-label={`Switch to ${viewToggleLabel} view`}
           aria-pressed={isPerspectiveView}
-          title={isAltitudeLocked ? '3D/2D tilt controls unlock below 2,000 km' : `Switch to ${viewToggleLabel} view`}
+          title={
+            isAltitudeLocked
+              ? '3D/2D tilt controls unlock below 2,000 km'
+              : `Switch to ${viewToggleLabel} view`
+          }
           style={{
             opacity: isAltitudeLocked ? 0.4 : 1,
             cursor: isAltitudeLocked ? 'not-allowed' : 'pointer',
@@ -141,123 +205,198 @@ export function NavControls({
         >
           {viewToggleLabel}
         </button>
-      </div>
 
-      <div className="flex flex-col overflow-hidden rounded-2xl border border-white/15 bg-[#0B0F17]/82 backdrop-blur-md shadow-2xl">
-        <div ref={compassRef} className="relative">
-          <button
-            type="button"
-            onClick={() => setCompassOpen((open) => !open)}
-            aria-label={`Open compass controls; heading ${Math.round(headingDeg)} degrees`}
-            aria-expanded={compassOpen}
-            title="Compass, tilt and heading"
-            className="flex h-11 w-11 items-center justify-center border-b border-white/10 text-slate-200 transition-colors hover:bg-white/10 hover:text-white cursor-pointer"
-          >
-            <CompassRose headingDeg={headingDeg} />
-          </button>
-          {compassOpen && (
-            <section
-              aria-label="Compass controls"
-              className="absolute bottom-0 right-14 w-[min(19rem,calc(100vw-5.5rem))] rounded-2xl border border-white/15 bg-[#0b111b]/95 p-4 text-slate-100 shadow-2xl backdrop-blur-xl"
-            >
-              <div className="mb-4 flex items-center justify-between">
-                <div>
-                  <h2 className="text-sm font-semibold tracking-wide">Camera orientation</h2>
-                  <p className="mt-0.5 text-[10px] text-slate-400">Drag to explore the surface</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setCompassOpen(false)}
-                  aria-label="Close compass controls"
-                  className="flex h-7 w-7 items-center justify-center rounded-full text-slate-400 hover:bg-white/10 hover:text-white"
-                >
-                  <span aria-hidden="true">✕</span>
-                </button>
-              </div>
-
-              <label className="mb-1 flex items-center justify-between text-xs text-slate-300">
-                <span>Tilt</span>
-                <span className="font-mono-tabular text-cyan-200">{Math.round(tiltDeg)}°</span>
-              </label>
-              <input
-                type="range"
-                min={0}
-                max={80}
-                step={1}
-                value={Math.max(0, Math.min(80, Math.round(tiltDeg)))}
-                onChange={(event) => onSetTilt(Number(event.target.value))}
-                aria-label="Tilt camera from straight down to horizon"
-                className="mb-4 h-1.5 w-full cursor-pointer accent-cyan-400"
-              />
-              <div className="-mt-3 mb-4 flex justify-between text-[9px] text-slate-500"><span>0° Top-down</span><span>80° Horizon</span></div>
-
-              <label className="mb-1 flex items-center justify-between text-xs text-slate-300">
-                <span>Heading</span>
-                <span className="font-mono-tabular text-cyan-200">{Math.round(headingDeg)}°</span>
-              </label>
-              <input
-                type="range"
-                min={0}
-                max={360}
-                step={1}
-                value={Math.round(headingDeg)}
-                onChange={(event) => onSetHeading(Number(event.target.value))}
-                aria-label="Rotate camera heading from 0 to 360 degrees"
-                className="mb-4 h-1.5 w-full cursor-pointer accent-cyan-400"
-              />
-
-              <div className="flex items-center justify-between gap-2 border-t border-white/10 pt-3">
-                <button
-                  type="button"
-                  onClick={onResetNorth}
-                  className="rounded-lg border border-cyan-300/25 bg-cyan-400/10 px-3 py-2 text-[11px] font-medium text-cyan-100 transition hover:bg-cyan-400/20"
-                >
-                  Reset to north
-                </button>
-                <button
-                  type="button"
-                  aria-pressed={sunShadowEnabled}
-                  onClick={onToggleSunShadow}
-                  className={`rounded-lg border px-3 py-2 text-[11px] font-medium transition ${sunShadowEnabled ? 'border-amber-300/30 bg-amber-400/10 text-amber-100' : 'border-white/15 bg-white/5 text-slate-300 hover:bg-white/10'}`}
-                  title="Toggle solar day/night terminator shading"
-                >
-                  Sun Shadow: {sunShadowEnabled ? 'ON' : 'OFF'}
-                </button>
-              </div>
-            </section>
-          )}
-        </div>
+        {/* Refined Standalone Reset Globe Control */}
         <button
           type="button"
           onClick={onResetGlobe}
           aria-label="Reset global Mars orbit view"
-          title="Reset Globe"
-          className="group/reset flex h-10 w-10 items-center justify-center rounded-b-2xl border-t border-white/10 text-slate-300 transition-all duration-150 hover:bg-cyan-400/10 hover:text-cyan-100 active:bg-cyan-400/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-cyan-300/70 cursor-pointer"
+          title="Reset Globe (R)"
+          style={{ transition: 'all 0.25s ease' }}
+          className="group/reset flex h-10 w-10 items-center justify-end overflow-hidden rounded-full border border-white/15 bg-[#0B0F17]/85 px-[11px] gap-0 text-slate-200 shadow-2xl backdrop-blur-md hover:w-[132px] hover:gap-2 hover:px-3.5 hover:border-cyan-400/45 hover:bg-cyan-500/15 hover:text-cyan-100 active:scale-95 cursor-pointer whitespace-nowrap"
         >
-          <RotateCcw className="h-4 w-4 transition-transform duration-200 group-hover/reset:-rotate-45 group-active/reset:-rotate-90" aria-hidden="true" />
+          <span
+            style={{ transition: 'all 0.25s ease' }}
+            className="max-w-0 overflow-hidden text-xs font-medium opacity-0 group-hover/reset:max-w-[90px] group-hover/reset:opacity-100 whitespace-nowrap"
+          >
+            Reset Globe
+          </span>
+          <ResetGlobeIcon />
         </button>
       </div>
 
-      <div className="flex flex-col overflow-hidden rounded-2xl border border-white/15 bg-[#0B0F17]/82 backdrop-blur-md shadow-2xl">
+      {/* Standalone Compass Button with Google Earth Tilt & Heading Popover */}
+      <div ref={compassRef} className="relative">
         <button
           type="button"
-          onClick={onZoomIn}
-          aria-label="Zoom in"
-          title="Zoom In"
-          className="flex h-10 w-10 items-center justify-center border-b border-white/10 text-slate-200 transition-colors hover:bg-white/10 hover:text-white cursor-pointer"
+          onClick={() => setCompassOpen((open) => !open)}
+          aria-label={`Open compass controls; heading ${roundedHeading} degrees`}
+            aria-expanded={compassOpen}
+            title="Compass, Tilt & Heading"
+            className={`flex h-10 w-10 items-center justify-center rounded-full border backdrop-blur-md shadow-2xl transition-all cursor-pointer ${
+              compassOpen
+                ? 'border-cyan-400/70 bg-cyan-500/25 text-white ring-2 ring-cyan-400/25'
+                : 'border-white/15 bg-[#0B0F17]/85 text-slate-200 hover:border-white/30 hover:bg-white/10 hover:text-white'
+            }`}
+          >
+            <CompassRose headingDeg={headingDeg} active={compassOpen} />
+          </button>
+
+        {compassOpen && (
+          <section
+            aria-label="Compass tilt and heading controls"
+            className="absolute bottom-0 right-13 w-[min(19.5rem,calc(100vw-5.5rem))] rounded-2xl border border-white/15 bg-[#0B0F17]/95 p-4 text-slate-100 shadow-2xl backdrop-blur-xl"
+          >
+            <div className="mb-3 flex items-center justify-end">
+              <button
+                type="button"
+                onClick={() => setCompassOpen(false)}
+                aria-label="Close tilt and heading controls"
+                className="flex h-7 w-7 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-white/10 hover:text-white cursor-pointer"
+              >
+                <X className="h-4 w-4" aria-hidden="true" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div className="flex items-center gap-3">
+                <label
+                  htmlFor="compass-tilt-slider"
+                  className="w-16 shrink-0 text-[13px] font-medium text-slate-200"
+                >
+                  Tilt
+                </label>
+                <input
+                  id="compass-tilt-slider"
+                  type="range"
+                  min={0}
+                  max={80}
+                  step={1}
+                  value={clampedTilt}
+                  onChange={(event) => onSetTilt(Number(event.target.value))}
+                  aria-label="Tilt camera from straight down to horizon"
+                  style={{
+                    background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${tiltPercent}%, rgba(255,255,255,0.16) ${tiltPercent}%, rgba(255,255,255,0.16) 100%)`,
+                  }}
+                  className="compass-range-slider flex-1 cursor-pointer appearance-none h-1 rounded-full outline-none"
+                />
+                <span className="w-9 text-right font-mono-tabular text-[11px] text-slate-400">
+                  {clampedTilt}°
+                </span>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <label
+                  htmlFor="compass-heading-slider"
+                  className="w-16 shrink-0 text-[13px] font-medium text-slate-200"
+                >
+                  Heading
+                </label>
+                <input
+                  id="compass-heading-slider"
+                  type="range"
+                  min={0}
+                  max={360}
+                  step={1}
+                  value={roundedHeading}
+                  onChange={(event) => onSetHeading(Number(event.target.value))}
+                  aria-label="Rotate camera heading from 0 to 360 degrees"
+                  style={{
+                    background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${headingPercent}%, rgba(255,255,255,0.16) ${headingPercent}%, rgba(255,255,255,0.16) 100%)`,
+                  }}
+                  className="compass-range-slider flex-1 cursor-pointer appearance-none h-1 rounded-full outline-none"
+                />
+                <span className="w-9 text-right font-mono-tabular text-[11px] text-slate-400">
+                  {roundedHeading}°
+                </span>
+              </div>
+            </div>
+
+            <div className="mt-5 flex items-center justify-between">
+              <button
+                type="button"
+                disabled={!shadowsAllowed}
+                aria-pressed={shadowsAllowed && sunShadowEnabled}
+                onClick={onToggleSunShadow}
+                title={
+                  shadowsAllowed
+                    ? `Backside shadow: ${sunShadowEnabled ? 'ON' : 'OFF'}`
+                    : 'Shadows disabled in Radiation, Temperature & Elevation views'
+                }
+                className={`flex h-7 w-7 items-center justify-center rounded-full border transition-colors ${
+                  !shadowsAllowed
+                    ? 'border-white/10 bg-white/[0.03] text-slate-600 cursor-not-allowed opacity-50'
+                    : sunShadowEnabled
+                      ? 'border-amber-300/35 bg-amber-400/12 text-amber-200 hover:bg-amber-400/20 cursor-pointer'
+                      : 'border-white/12 bg-white/5 text-slate-400 hover:bg-white/10 hover:text-slate-200 cursor-pointer'
+                }`}
+              >
+                <SunMoon className="h-3.5 w-3.5" aria-hidden="true" />
+              </button>
+
+              <button
+                type="button"
+                onClick={onResetNorth}
+                className="rounded-lg px-2 py-1 text-[13px] font-medium text-sky-400 transition-colors hover:bg-sky-400/10 hover:text-sky-300 cursor-pointer"
+              >
+                Reset to north
+              </button>
+            </div>
+          </section>
+        )}
+        </div>
+
+        {/* Zoom Controls (Hold + / - for continuous zoom; clicks have no jump effect; scroll wheel supported) */}
+        <div
+          onWheel={(event) => onWheelZoom(event.deltaY)}
+          title="Hold + or - for continuous zoom, or scroll with mouse / trackpad"
+          className="flex flex-col overflow-hidden rounded-2xl border border-white/15 bg-[#0B0F17]/82 backdrop-blur-md shadow-2xl"
         >
-          <Plus className="h-4 w-4" aria-hidden="true" />
-        </button>
-        <button
-          type="button"
-          onClick={onZoomOut}
-          aria-label="Zoom out"
-          title="Zoom Out"
-          className="flex h-10 w-10 items-center justify-center text-slate-200 transition-colors hover:bg-white/10 hover:text-white cursor-pointer"
-        >
-          <Minus className="h-4 w-4" aria-hidden="true" />
-        </button>
-      </div>
+          <button
+            type="button"
+            onPointerDown={(event) => {
+              if (event.pointerType === 'mouse' && event.button !== 0) return;
+              onStartZoomIn();
+            }}
+            onPointerUp={onStopZoom}
+            onPointerLeave={onStopZoom}
+            onPointerCancel={onStopZoom}
+            onKeyDown={(event) => {
+              if ((event.key === ' ' || event.key === 'Enter') && !event.repeat) {
+                onStartZoomIn();
+              }
+            }}
+            onKeyUp={onStopZoom}
+            onBlur={onStopZoom}
+            aria-label="Hold to zoom in continuously"
+            title="Press and hold to zoom in"
+            className="flex h-10 w-10 select-none touch-none items-center justify-center border-b border-white/10 text-slate-200 transition-colors hover:bg-white/10 hover:text-white active:bg-cyan-500/20 active:text-cyan-100 cursor-pointer"
+          >
+            <Plus className="h-4 w-4" aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            onPointerDown={(event) => {
+              if (event.pointerType === 'mouse' && event.button !== 0) return;
+              onStartZoomOut();
+            }}
+            onPointerUp={onStopZoom}
+            onPointerLeave={onStopZoom}
+            onPointerCancel={onStopZoom}
+            onKeyDown={(event) => {
+              if ((event.key === ' ' || event.key === 'Enter') && !event.repeat) {
+                onStartZoomOut();
+              }
+            }}
+            onKeyUp={onStopZoom}
+            onBlur={onStopZoom}
+            aria-label="Hold to zoom out continuously"
+            title="Press and hold to zoom out"
+            className="flex h-10 w-10 select-none touch-none items-center justify-center text-slate-200 transition-colors hover:bg-white/10 hover:text-white active:bg-cyan-500/20 active:text-cyan-100 cursor-pointer"
+          >
+            <Minus className="h-4 w-4" aria-hidden="true" />
+          </button>
+        </div>
     </div>
   );
 }

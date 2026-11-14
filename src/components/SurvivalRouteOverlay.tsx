@@ -57,8 +57,8 @@ export function SurvivalRouteOverlay({
           aria-label="Optimal Survival Route Telemetry"
           className={`pointer-events-auto fixed left-4 z-20 flex w-[360px] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-2xl border border-emerald-400/30 bg-[#0B0F17]/88 backdrop-blur-md shadow-2xl ${
             routeMode
-              ? 'top-[116px] max-h-[calc(100vh-12.5rem)]'
-              : 'top-[68px] max-h-[calc(100vh-9.5rem)]'
+              ? 'top-[116px] max-h-[calc(100vh-14.5rem)]'
+              : 'top-[68px] max-h-[calc(100vh-12rem)]'
           }`}
         >
           {/* Card Header */}

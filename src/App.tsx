@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { CameraTelemetry, CursorTelemetry, CursorTelemetryPill } from './components/CursorTelemetryPill';
 import { InfoMenu } from './components/InfoMenu';
+import { LeftMarginControls } from './components/LeftMarginControls';
 import { MapStyleBar, MapStyleMode } from './components/MapStyleBar';
 import {
   LiveSatellitePosition,
@@ -17,6 +18,16 @@ import { SearchBar } from './components/SearchBar';
 import { SurvivalRouteOverlay } from './components/SurvivalRouteOverlay';
 import { TargetInfoCard } from './components/TargetInfoCard';
 import { MarsTarget, TelemetryMode } from './data/marsData';
+import {
+  LiveOrbiterElements,
+  loadCachedOrbiterElements,
+  refreshOrbiterEphemerides,
+} from './services/marsOrbiterSync';
+import {
+  RoverTelemetryFix,
+  loadCachedRoverTelemetry,
+  refreshLiveRoverTelemetry,
+} from './services/marsRoverTelemetry';
 import {
   FALLBACK_WEATHER_STATIONS,
   MarsWeatherStation,
@@ -35,6 +46,8 @@ export default function App() {
   const [cameraTelemetry, setCameraTelemetry] = useState<CameraTelemetry | null>(null);
   const [sunShadowEnabled, setSunShadowEnabled] = useState<boolean>(true);
   const [gridEnabled, setGridEnabled] = useState<boolean>(false);
+  const [showSatellites, setShowSatellites] = useState<boolean>(false);
+  const [showRovers, setShowRovers] = useState<boolean>(false);
 
   const [weatherEnabled, setWeatherEnabled] = useState<boolean>(false);
   const [weatherStations, setWeatherStations] = useState<MarsWeatherStation[]>(
@@ -42,6 +55,12 @@ export default function App() {
   );
   const weatherFetchedRef = useRef<boolean>(false);
 
+  const [liveRovers, setLiveRovers] = useState<Record<string, RoverTelemetryFix>>(() =>
+    loadCachedRoverTelemetry()
+  );
+  const [liveOrbiterElements, setLiveOrbiterElements] = useState<
+    Record<string, LiveOrbiterElements>
+  >(() => loadCachedOrbiterElements());
   const [liveSatellites, setLiveSatellites] = useState<Record<string, LiveSatellitePosition>>({});
 
   // Real-time cursor surface coordinates & MOLA elevation
@@ -67,7 +86,50 @@ export default function App() {
     });
   }, [weatherEnabled]);
 
+  // Synchronize live rover waypoints & JPL Horizons orbiter ephemeris with localStorage fallback
+  useEffect(() => {
+    let cancelled = false;
+
+    const syncTelemetry = () => {
+      refreshLiveRoverTelemetry(loadCachedRoverTelemetry()).then((updated) => {
+        if (!cancelled) setLiveRovers(updated);
+      });
+      refreshOrbiterEphemerides(loadCachedOrbiterElements()).then((updated) => {
+        if (!cancelled) setLiveOrbiterElements(updated);
+      });
+    };
+
+    syncTelemetry();
+
+    const handleOnline = () => syncTelemetry();
+    const handleOffline = () => {
+      setLiveRovers((prev) => {
+        const next: Record<string, RoverTelemetryFix> = {};
+        for (const [id, fix] of Object.entries(prev)) {
+          next[id] = { ...fix, status: 'offline-fallback' };
+        }
+        return next;
+      });
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    const intervalId = window.setInterval(syncTelemetry, 300_000);
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+      window.clearInterval(intervalId);
+    };
+  }, []);
+
   const handleSearchSelectAndFly = useCallback((target: MarsTarget) => {
+    if (target.category === 'satellite') {
+      setShowSatellites(true);
+    } else if (target.category === 'rover') {
+      setShowRovers(true);
+    }
     setSelectedTarget(target);
     globeRef.current?.zoomToTarget(target);
   }, []);
@@ -118,6 +180,11 @@ export default function App() {
     setRouteMode(false);
   }, [routeResult]);
 
+  const handleStartZoomIn = useCallback(() => globeRef.current?.startZoomIn(), []);
+  const handleStartZoomOut = useCallback(() => globeRef.current?.startZoomOut(), []);
+  const handleStopZoom = useCallback(() => globeRef.current?.stopZoom(), []);
+  const handleWheelZoom = useCallback((deltaY: number) => globeRef.current?.wheelZoom(deltaY), []);
+
   // Keyboard shortcuts: Escape exits Measure/Route Mode or closes Knowledge Card, R resets globe
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -158,6 +225,10 @@ export default function App() {
         weatherEnabled={weatherEnabled}
         measureMode={measureMode}
         routeMode={routeMode}
+        showSatellites={showSatellites}
+        showRovers={showRovers}
+        liveRovers={liveRovers}
+        liveOrbiterElements={liveOrbiterElements}
         onSelectTarget={setSelectedTarget}
         onHeadingChange={setHeadingRad}
         onLiveSatellitesUpdate={setLiveSatellites}
@@ -171,7 +242,7 @@ export default function App() {
       />
 
       {/* Control 1: Top-Left Floating Search & Quick-Jump Pill */}
-      <SearchBar onSelectAndFly={handleSearchSelectAndFly} />
+      <SearchBar onSelectAndFly={handleSearchSelectAndFly} liveRovers={liveRovers} />
 
       {/* Geodesic Measure Tool Banner, Live Distance Tooltip & Result Card */}
       <MeasureToolOverlay
@@ -190,6 +261,30 @@ export default function App() {
         routeResult={routeResult}
         onClearRoute={handleClearSurvivalRoute}
         onExitRouteMode={handleExitRouteMode}
+      />
+
+      {/* Left-Margin Toggle Buttons for Satellites & Rovers */}
+      <LeftMarginControls
+        showSatellites={showSatellites}
+        showRovers={showRovers}
+        onToggleSatellites={() => {
+          setShowSatellites((prev) => {
+            const next = !prev;
+            if (!next) {
+              setSelectedTarget((sel) => (sel?.category === 'satellite' ? null : sel));
+            }
+            return next;
+          });
+        }}
+        onToggleRovers={() => {
+          setShowRovers((prev) => {
+            const next = !prev;
+            if (!next) {
+              setSelectedTarget((sel) => (sel?.category === 'rover' ? null : sel));
+            }
+            return next;
+          });
+        }}
       />
 
       {/* Bottom-Left Real-Time Cursor Surface Coordinates & Elevation Telemetry Pill */}
@@ -215,11 +310,14 @@ export default function App() {
         measureMode={measureMode}
         routeMode={routeMode}
         sunShadowEnabled={sunShadowEnabled}
+        shadowsAllowed={mapStyle === 'optical'}
         onToggleMeasure={handleToggleMeasure}
         onToggle3DView={() => globeRef.current?.toggle3DView()}
         onToggleRouteMode={handleToggleRouteMode}
-        onZoomIn={() => globeRef.current?.zoomIn()}
-        onZoomOut={() => globeRef.current?.zoomOut()}
+        onStartZoomIn={handleStartZoomIn}
+        onStartZoomOut={handleStartZoomOut}
+        onStopZoom={handleStopZoom}
+        onWheelZoom={handleWheelZoom}
         onResetNorth={() => globeRef.current?.resetNorth()}
         onResetGlobe={() => globeRef.current?.resetGlobe()}
         onSetTilt={(tiltDeg) => globeRef.current?.setCameraTilt(tiltDeg)}
@@ -233,6 +331,8 @@ export default function App() {
           target={selectedTarget}
           temperatureLs={temperatureLs}
           liveSatellite={liveSatellites[selectedTarget.id]}
+          liveRover={liveRovers[selectedTarget.id]}
+          liveOrbiter={liveOrbiterElements[selectedTarget.id]}
           weatherEnabled={weatherEnabled}
           weatherStation={weatherStations.find((s) => s.targetId === selectedTarget.id)}
           telemetryMode={telemetryMode}

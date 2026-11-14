@@ -57,3 +57,33 @@
 .cesium-viewer-bottom {
   display: none !important;
 }
+
+.compass-range-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 9999px;
+  background: #3b82f6;
+  border: 2px solid #e0f2fe;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.55);
+  cursor: pointer;
+  transition: transform 0.12s ease, background-color 0.12s ease;
+}
+
+.compass-range-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.12);
+  background: #60a5fa;
+}
+
+.compass-range-slider::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 9999px;
+  background: #3b82f6;
+  border: 2px solid #e0f2fe;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.55);
+  cursor: pointer;
+  transition: transform 0.12s ease, background-color 0.12s ease;
+}
+

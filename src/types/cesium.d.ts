@@ -22,6 +22,8 @@ export interface CesiumImageryLayer {
   brightness: number;
   gamma: number;
   saturation: number;
+  magnificationFilter?: unknown;
+  minificationFilter?: unknown;
   imageryProvider: {
     errorEvent?: {
       addEventListener: (cb: (err: unknown) => void) => () => void;
@@ -46,8 +48,15 @@ export interface CesiumViewer {
       lightingFadeInDistance?: number;
       lightingFadeOutDistance?: number;
       preloadSiblings?: boolean;
+      preloadAncestors?: boolean;
+      tileCacheSize?: number;
       maximumScreenSpaceError?: number;
       atmosphereLightIntensity: number;
+      atmosphereHueShift?: number;
+      atmosphereSaturationShift?: number;
+      atmosphereBrightnessShift?: number;
+      atmosphereRayleighScaleHeight?: number;
+      atmosphereMieScaleHeight?: number;
       depthTestAgainstTerrain: boolean;
       pick: (ray: unknown, scene: unknown) => unknown;
       material?: unknown;
@@ -56,9 +65,17 @@ export interface CesiumViewer {
       };
     };
     skyAtmosphere: {
+      show?: boolean;
       hueShift: number;
       saturationShift: number;
       brightnessShift: number;
+      atmosphereRayleighScaleHeight?: number;
+      atmosphereMieScaleHeight?: number;
+      atmosphereLightIntensity?: number;
+      perFragmentAtmosphere?: boolean;
+    };
+    fog?: {
+      enabled: boolean;
     };
     screenSpaceCameraController: {
       enableCollisionDetection: boolean;
@@ -74,12 +91,19 @@ export interface CesiumViewer {
       zoomEventTypes: unknown[];
       tiltEventTypes: unknown[];
     };
+    preUpdate: {
+      addEventListener: (cb: () => void) => () => void;
+    };
     preRender: {
       addEventListener: (cb: () => void) => () => void;
     };
     postRender: {
       addEventListener: (cb: () => void) => () => void;
     };
+    renderError?: {
+      addEventListener: (cb: (scene: unknown, error: unknown) => void) => () => void;
+    };
+    light?: unknown;
     highDynamicRange: boolean;
     sun?: unknown;
     moon?: unknown;

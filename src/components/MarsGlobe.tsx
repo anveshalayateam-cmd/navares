@@ -7,7 +7,9 @@ import {
   TelemetryMode,
   getMarsElevation,
 } from '../data/marsData';
-import { MARS_FEATURE_OUTLINES } from '../data/marsFeatureOutlines';
+import { getLocationAreaInfo } from '../data/marsFeatureOutlines';
+import { LiveOrbiterElements } from '../services/marsOrbiterSync';
+import { RoverTelemetryFix } from '../services/marsRoverTelemetry';
 import { CesiumEntity, CesiumImageryLayer, CesiumViewer } from '../types/cesium';
 import {
   computeSatelliteCartesian,
@@ -23,12 +25,10 @@ import {
   wrapLongitudeDeg,
 } from '../utils/marsPathfinder';
 import {
-  generateMarsElevationGrayscaleDataUrl,
-  generateMarsRadiationDataUrl,
-  generateMarsTemperatureDataUrl,
   formatMarsSurfaceTempC,
   getMarsSurfaceTempC,
 } from '../utils/marsOverlayMaps';
+import { createMarsProceduralImageryProvider } from '../utils/marsTiledProviders';
 import { CameraTelemetry, CursorTelemetry } from './CursorTelemetryPill';
 import { MapStyleMode } from './MapStyleBar';
 import { LiveMeasurePreview, MeasureResult } from './MeasureToolOverlay';
@@ -37,13 +37,17 @@ export interface LiveSatellitePosition {
   latDeg: number;
   lonDeg: number;
   altKm: number;
+  velocityKmS: number;
+  source?: LiveOrbiterElements['source'];
 }
 
 export interface MarsGlobeHandle {
   zoomToLocation: (lat: number, lon: number, alt?: number) => void;
   zoomToTarget: (target: MarsTarget) => void;
-  zoomIn: () => void;
-  zoomOut: () => void;
+  startZoomIn: () => void;
+  startZoomOut: () => void;
+  stopZoom: () => void;
+  wheelZoom: (deltaY: number) => void;
   toggle3DView: () => void;
   setCameraTilt: (tiltDeg: number) => void;
   setCameraHeading: (headingDeg: number) => void;
@@ -63,6 +67,10 @@ interface MarsGlobeProps {
   weatherEnabled: boolean;
   measureMode: boolean;
   routeMode: boolean;
+  showSatellites: boolean;
+  showRovers: boolean;
+  liveRovers: Record<string, RoverTelemetryFix>;
+  liveOrbiterElements: Record<string, LiveOrbiterElements>;
   onSelectTarget: (target: MarsTarget | null) => void;
   onHeadingChange: (headingRad: number) => void;
   onLiveSatellitesUpdate: (positions: Record<string, LiveSatellitePosition>) => void;
@@ -75,18 +83,62 @@ interface MarsGlobeProps {
   onRouteResultChange: (result: SurvivalRouteResult | null) => void;
 }
 
-const DENSE_REGION_LABEL_IDS = new Set([
-  'acidalia-planitia',
+const PRIMARY_GLOBAL_LANDMARK_IDS = new Set([
+  'olympus-mons',
+  'valles-marineris',
+  'hellas-planitia',
+  'arcadia-planitia',
+  'gale-crater',
+  'north-polar-cap',
+  'south-polar-cap',
+  'tharsis-montes',
+  'syrtis-major',
+  'argyre-planitia',
+  'korolev-crater',
+  'noctis-labyrinths',
+  'elysium-planitia',
+  'utopia-planitia',
+  'amazonis-planitia',
+  'chryse-planitia',
+  'airy-zero',
+]);
+
+const PRIMARY_GLOBAL_SATELLITE_IDS = new Set([
+  'mro',
+  'maven',
+  'odyssey',
+  'mars-express',
+  'tgo',
+  'hope',
+  'mgs',
+  'tianwen-1',
+  'mangalyaan',
+  'mars-relay-eq1',
+]);
+
+const PRIMARY_GLOBAL_ROVER_IDS = new Set([
+  'perseverance',
+  'curiosity',
+  'zhurong',
+  'opportunity',
+  'spirit',
+  'insight',
+  'phoenix',
+  'viking-1',
+  'viking-2',
   'pathfinder',
-  'mawrth-vallis',
-  'oxia-planum',
+  'beagle-2',
+  'mars-3',
+  'schiaparelli',
+  'ingenuity',
+  'rosalind-franklin',
 ]);
 
 const MARS_TERRAIN_VERTICAL_EXAGGERATION = 2.2;
 
-const CTX_MAX_ALPHA = 0.28;
-const CTX_FADE_START_METERS = 650_000;
-const CTX_FULL_ALPHA_METERS = 150_000;
+const CTX_MAX_ALPHA = 0.68;
+const CTX_FADE_START_METERS = 900_000;
+const CTX_FULL_ALPHA_METERS = 40_000;
 
 function getCtxFadeAlpha(cameraHeightMeters: number): number {
   const progress = Math.max(
@@ -97,11 +149,13 @@ function getCtxFadeAlpha(cameraHeightMeters: number): number {
         (CTX_FADE_START_METERS - CTX_FULL_ALPHA_METERS)
     )
   );
-  return CTX_MAX_ALPHA * progress;
+  // Smooth S-curve fade for zero pop-in during fast zoom
+  const smooth = progress * progress * (3 - 2 * progress);
+  return CTX_MAX_ALPHA * smooth;
 }
 
-function getHorizonAtmosphereStrength(altitudeAboveSurfaceMeters: number): number {
-  const t = Math.max(0, Math.min(1, (40_000 - altitudeAboveSurfaceMeters) / 32_000));
+function getLowAltitudeAtmosphereBoost(altitudeAboveSurfaceMeters: number): number {
+  const t = Math.max(0, Math.min(1, (500_000 - altitudeAboveSurfaceMeters) / 500_000));
   return t * t * (3 - 2 * t);
 }
 
@@ -129,6 +183,10 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     weatherEnabled,
     measureMode,
     routeMode,
+    showSatellites,
+    showRovers,
+    liveRovers,
+    liveOrbiterElements,
     onSelectTarget,
     onHeadingChange,
     onLiveSatellitesUpdate,
@@ -146,6 +204,8 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
   const viewerRef = useRef<CesiumViewer | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const marsEllipsoidRef = useRef<any>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const marsTilingSchemeRef = useRef<any>(null);
 
   const vikingLayerRef = useRef<CesiumImageryLayer | null>(null);
   const ctxLayerRef = useRef<CesiumImageryLayer | null>(null);
@@ -160,11 +220,17 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
   const lastCursorPositionRef = useRef<{ x: number; y: number } | null>(null);
   const selectedRegionEntityRef = useRef<CesiumEntity | null>(null);
   const selectedTargetIdRef = useRef<string | null>(selectedTargetId);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const shadowMaterialRef = useRef<any>(null);
+  const zoomHoldTimerRef = useRef<number | null>(null);
+  const zoomHoldRafRef = useRef<number | null>(null);
 
   const pinEntitiesRef = useRef<Map<string, CesiumEntity>>(new Map());
   const spacecraftEntitiesRef = useRef<Map<string, CesiumEntity>>(new Map());
   const roverEntitiesRef = useRef<Map<string, CesiumEntity>>(new Map());
-  const simSecondsRef = useRef<number>(0);
+  const orbitRingEntitiesRef = useRef<Map<string, CesiumEntity>>(new Map());
+  const orbitWakeEntitiesRef = useRef<Map<string, CesiumEntity>>(new Map());
+  const simBoostMsRef = useRef<number>(0);
 
   // Measure tool refs
   const measureStateRef = useRef<{
@@ -218,6 +284,10 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
   const routeModeRef = useRef<boolean>(routeMode);
   const sunShadowEnabledRef = useRef<boolean>(sunShadowEnabled);
   const gridEnabledRef = useRef<boolean>(gridEnabled);
+  const showSatellitesRef = useRef<boolean>(showSatellites);
+  const showRoversRef = useRef<boolean>(showRovers);
+  const liveRoversRef = useRef<Record<string, RoverTelemetryFix>>(liveRovers);
+  const liveOrbiterElementsRef = useRef<Record<string, LiveOrbiterElements>>(liveOrbiterElements);
   const onSelectTargetRef = useRef(onSelectTarget);
   const onHeadingChangeRef = useRef(onHeadingChange);
   const onLiveSatellitesUpdateRef = useRef(onLiveSatellitesUpdate);
@@ -239,6 +309,10 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
   routeModeRef.current = routeMode;
   sunShadowEnabledRef.current = sunShadowEnabled;
   gridEnabledRef.current = gridEnabled;
+  showSatellitesRef.current = showSatellites;
+  showRoversRef.current = showRovers;
+  liveRoversRef.current = liveRovers;
+  liveOrbiterElementsRef.current = liveOrbiterElements;
   selectedTargetIdRef.current = selectedTargetId;
   onSelectTargetRef.current = onSelectTarget;
   onHeadingChangeRef.current = onHeadingChange;
@@ -250,6 +324,24 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
   onMeasureResultChangeRef.current = onMeasureResultChange;
   onRouteStartChangeRef.current = onRouteStartChange;
   onRouteResultChangeRef.current = onRouteResultChange;
+
+  const getEffectiveEpochMs = () => Date.now() + simBoostMsRef.current;
+
+  const getRoverCoords = (target: MarsTarget) => {
+    const fix = liveRoversRef.current[target.id];
+    if (fix) {
+      return {
+        latitude: fix.latitude,
+        longitude: fix.longitude,
+        elevationMeters: fix.elevationMeters,
+      };
+    }
+    return {
+      latitude: target.latitude,
+      longitude: target.longitude,
+      elevationMeters: getMarsElevation(target.latitude, target.longitude, 4),
+    };
+  };
 
   const cancelCameraOrientationAnimation = () => {
     if (cameraAnimationFrameRef.current !== null) {
@@ -303,10 +395,11 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
       viewer.camera.cancelFlight();
 
       // Aim slightly ahead at 1x speed so the 2s camera flight meets the orbiter cleanly
-      const targetTimeSec =
-        simSecondsRef.current + (telemetryModeRef.current === 'realtime' ? 1.8 : 0);
-      const satNow = computeSatelliteCartesian(target, targetTimeSec);
-      const satNext = computeSatelliteCartesian(target, targetTimeSec + 1.0);
+      const targetEpochMs =
+        getEffectiveEpochMs() + (telemetryModeRef.current === 'realtime' ? 1800 : 0);
+      const liveElem = liveOrbiterElementsRef.current[target.id];
+      const satNow = computeSatelliteCartesian(target, targetEpochMs, liveElem);
+      const satNext = computeSatelliteCartesian(target, targetEpochMs + 1000, liveElem);
 
       const satPos = new Cesium.Cartesian3(satNow.x, satNow.y, satNow.z);
       const nextPos = new Cesium.Cartesian3(satNext.x, satNext.y, satNext.z);
@@ -357,11 +450,16 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
       return;
     }
     if (target.category === 'rover') {
-      // Fly smoothly below 35 km (slant range ~12 km) to reveal the rover directly on the crater floor
-      zoomToLocationInternal(target.latitude, target.longitude, 11000);
+      const coords = getRoverCoords(target);
+      // Fly smoothly below 35 km (slant range ~11 km) to reveal the rover directly on the crater floor
+      zoomToLocationInternal(coords.latitude, coords.longitude, 11000);
       return;
     }
-    zoomToLocationInternal(target.latitude, target.longitude, 15000);
+    const areaInfo = getLocationAreaInfo(target);
+    const adaptiveAlt = areaInfo
+      ? Math.max(6000, Math.min(2_200_000, Math.round(areaInfo.radiusKm * 1800)))
+      : 15000;
+    zoomToLocationInternal(target.latitude, target.longitude, adaptiveAlt);
   };
 
   const resetGlobeInternal = () => {
@@ -437,6 +535,24 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     cancelCameraOrientationAnimation();
     viewer.camera.cancelFlight();
 
+    if (duration <= 0) {
+      (viewer.camera as any).lookAt(
+        target,
+        new Cesium.HeadingPitchRange(headingRad, Cesium.Math.toRadians(clampedTilt - 90), range)
+      );
+      (viewer.camera as any).lookAtTransform(Cesium.Matrix4.IDENTITY);
+      onHeadingChangeRef.current(viewer.camera.heading);
+      onCameraTelemetryChangeRef.current({
+        altitudeAboveEllipsoidMeters: Math.max(
+          0,
+          marsEllipsoid.cartesianToCartographic(viewer.camera.positionWC)?.height ?? 9200000
+        ),
+        metersPerPixel: 0,
+        tiltDeg: clampedTilt,
+      });
+      return;
+    }
+
     const animate = (now: number) => {
       if (viewer.isDestroyed()) return;
       const progress = Math.min(1, (now - startedAt) / duration);
@@ -462,14 +578,14 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     const viewer = viewerRef.current;
     const Cesium = window.Cesium;
     if (!viewer || viewer.isDestroyed() || !Cesium) return;
-    setCameraOrientationInternal(viewer.camera.heading, tiltDeg);
+    setCameraOrientationInternal(viewer.camera.heading, tiltDeg, 0);
   };
 
   const setCameraHeadingInternal = (headingDeg: number) => {
     const viewer = viewerRef.current;
     if (!viewer || viewer.isDestroyed()) return;
     const currentTilt = Math.max(0, Math.min(80, 90 + (viewer.camera.pitch * 180) / Math.PI));
-    setCameraOrientationInternal((headingDeg * Math.PI) / 180, currentTilt);
+    setCameraOrientationInternal((headingDeg * Math.PI) / 180, currentTilt, 0);
   };
 
   const toggle3DViewInternal = () => {
@@ -507,35 +623,80 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     });
   };
 
-  const zoomInInternal = () => {
-    const viewer = viewerRef.current;
-    const marsEllipsoid = marsEllipsoidRef.current;
-    if (!viewer || viewer.isDestroyed() || !marsEllipsoid) return;
-
-    cancelCameraOrientationAnimation();
-    viewer.trackedEntity = undefined;
-    viewer.camera.cancelFlight();
-
-    const carto = marsEllipsoid.cartesianToCartographic(viewer.camera.position);
-    const cameraHeight = carto ? Math.max(250, carto.height) : 10000;
-    const moveStep = Math.min(cameraHeight - 250, cameraHeight * 0.35);
-    if (moveStep > 0) {
-      viewer.camera.moveForward(moveStep);
+  const stopContinuousZoomInternal = () => {
+    if (zoomHoldTimerRef.current !== null) {
+      window.clearTimeout(zoomHoldTimerRef.current);
+      zoomHoldTimerRef.current = null;
+    }
+    if (zoomHoldRafRef.current !== null) {
+      cancelAnimationFrame(zoomHoldRafRef.current);
+      zoomHoldRafRef.current = null;
     }
   };
 
-  const zoomOutInternal = () => {
+  const startContinuousZoomInternal = (direction: 1 | -1) => {
+    stopContinuousZoomInternal();
     const viewer = viewerRef.current;
     const marsEllipsoid = marsEllipsoidRef.current;
     if (!viewer || viewer.isDestroyed() || !marsEllipsoid) return;
+
+    // Require press-and-hold (>140ms) so single clicks on + / - have zero effect
+    zoomHoldTimerRef.current = window.setTimeout(() => {
+      zoomHoldTimerRef.current = null;
+      if (viewer.isDestroyed()) return;
+
+      cancelCameraOrientationAnimation();
+      viewer.trackedEntity = undefined;
+      viewer.camera.cancelFlight();
+
+      let lastTs = performance.now();
+      const stepFrame = (now: number) => {
+        if (viewer.isDestroyed()) {
+          zoomHoldRafRef.current = null;
+          return;
+        }
+        const dtSec = Math.min(0.05, Math.max(0.004, (now - lastTs) / 1000));
+        lastTs = now;
+
+        const carto = marsEllipsoid.cartesianToCartographic(viewer.camera.positionWC);
+        const cameraHeight = carto ? Math.max(250, carto.height) : 10000;
+        const speedFactorPerSec = 0.85;
+        const rawDelta = Math.max(20, cameraHeight * speedFactorPerSec * dtSec);
+
+        if (direction > 0) {
+          const moveStep = Math.min(Math.max(0, cameraHeight - 250), rawDelta);
+          if (moveStep > 0) viewer.camera.moveForward(moveStep);
+        } else {
+          const moveStep = Math.min(Math.max(0, 32000000 - cameraHeight), rawDelta);
+          if (moveStep > 0) viewer.camera.moveBackward(moveStep);
+        }
+
+        zoomHoldRafRef.current = requestAnimationFrame(stepFrame);
+      };
+
+      zoomHoldRafRef.current = requestAnimationFrame(stepFrame);
+    }, 140);
+  };
+
+  const wheelZoomInternal = (deltaY: number) => {
+    const viewer = viewerRef.current;
+    const marsEllipsoid = marsEllipsoidRef.current;
+    if (!viewer || viewer.isDestroyed() || !marsEllipsoid || deltaY === 0) return;
 
     cancelCameraOrientationAnimation();
     viewer.trackedEntity = undefined;
     viewer.camera.cancelFlight();
 
-    const carto = marsEllipsoid.cartesianToCartographic(viewer.camera.position);
+    const carto = marsEllipsoid.cartesianToCartographic(viewer.camera.positionWC);
     const cameraHeight = carto ? Math.max(250, carto.height) : 10000;
-    viewer.camera.moveBackward(Math.max(150, cameraHeight * 0.35));
+    const step = Math.max(15, cameraHeight * 0.06);
+    if (deltaY < 0) {
+      const moveStep = Math.min(Math.max(0, cameraHeight - 250), step);
+      if (moveStep > 0) viewer.camera.moveForward(moveStep);
+    } else {
+      const moveStep = Math.min(Math.max(0, 32000000 - cameraHeight), step);
+      if (moveStep > 0) viewer.camera.moveBackward(moveStep);
+    }
   };
 
   const clearMeasurementInternal = () => {
@@ -576,8 +737,10 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
   useImperativeHandle(ref, () => ({
     zoomToLocation: zoomToLocationInternal,
     zoomToTarget: zoomToTargetInternal,
-    zoomIn: zoomInInternal,
-    zoomOut: zoomOutInternal,
+    startZoomIn: () => startContinuousZoomInternal(1),
+    startZoomOut: () => startContinuousZoomInternal(-1),
+    stopZoom: stopContinuousZoomInternal,
+    wheelZoom: wheelZoomInternal,
     toggle3DView: toggle3DViewInternal,
     setCameraTilt: setCameraTiltInternal,
     setCameraHeading: setCameraHeadingInternal,
@@ -621,6 +784,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     const marsTilingScheme = new Cesium.GeographicTilingScheme({
       ellipsoid: marsEllipsoid,
     });
+    marsTilingSchemeRef.current = marsTilingScheme;
     const terrainTileWidth = 65;
     const terrainTileHeight = 65;
     const marsTerrainProvider = new Cesium.CustomHeightmapTerrainProvider({
@@ -695,11 +859,15 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     controller.enableRotate = true;
     controller.enableTilt = true;
     controller.enableTranslate = true;
-    controller.zoomFactor = 3.5;
+    controller.zoomFactor = 5.0;
     controller.inertiaZoom = 0.85;
     controller.inertiaSpin = 0.9;
     controller.zoomEventTypes = [
       Cesium.CameraEventType.WHEEL,
+      {
+        eventType: Cesium.CameraEventType.WHEEL,
+        modifier: Cesium.KeyboardEventModifier.CTRL,
+      },
       Cesium.CameraEventType.PINCH,
     ];
     controller.tiltEventTypes = [
@@ -711,36 +879,103 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
       },
     ];
 
-    // Keep the atmosphere dark in orbit; postRender reveals it below 40 km.
+    // Google Earth-inspired Martian limb atmosphere: thin yellowish halo visible along the sunlit edge
+    // while allowing the shadowed hemisphere to blend cleanly into black space.
     viewer.scene.backgroundColor = Cesium.Color.BLACK;
     viewer.scene.highDynamicRange = false;
     const marsSkyAtmosphere = new Cesium.SkyAtmosphere(marsEllipsoid);
-    marsSkyAtmosphere.hueShift = 0;
-    marsSkyAtmosphere.saturationShift = 0;
-    marsSkyAtmosphere.brightnessShift = -1;
-    (marsSkyAtmosphere as any).perFragmentAtmosphere = true;
+    marsSkyAtmosphere.show = true;
+    marsSkyAtmosphere.hueShift = -0.46;
+    marsSkyAtmosphere.saturationShift = 0.25;
+    marsSkyAtmosphere.brightnessShift = -0.32;
+    marsSkyAtmosphere.atmosphereRayleighScaleHeight = 4400;
+    marsSkyAtmosphere.atmosphereMieScaleHeight = 1800;
+    marsSkyAtmosphere.atmosphereLightIntensity = 18.0;
+    marsSkyAtmosphere.perFragmentAtmosphere = true;
     viewer.scene.skyAtmosphere = marsSkyAtmosphere;
 
-    viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString('#140a07');
+    viewer.scene.globe.baseColor = Cesium.Color.BLACK;
     viewer.scene.globe.preloadSiblings = true;
-    viewer.scene.globe.maximumScreenSpaceError = 1.5;
+    viewer.scene.globe.preloadAncestors = true;
+    viewer.scene.globe.tileCacheSize = 800;
+    viewer.scene.globe.maximumScreenSpaceError = 1.35;
     viewer.scene.verticalExaggeration = MARS_TERRAIN_VERTICAL_EXAGGERATION;
-    viewer.scene.globe.enableLighting = true;
-    viewer.scene.globe.dynamicAtmosphereLighting = true;
+    const initialShadowEnabled = sunShadowEnabledRef.current && mapStyleRef.current === 'optical';
+    viewer.scene.globe.enableLighting = initialShadowEnabled;
+    viewer.scene.globe.dynamicAtmosphereLighting = initialShadowEnabled;
     viewer.scene.globe.dynamicAtmosphereLightingFromSun = false;
     viewer.scene.globe.showGroundAtmosphere = false;
-    viewer.scene.globe.lightingFadeOutDistance = 20000000;
-    viewer.scene.globe.lightingFadeInDistance = 5000000;
+    if (viewer.scene.fog) {
+      viewer.scene.fog.enabled = false;
+    }
+    viewer.scene.globe.lightingFadeOutDistance = 4_200_000;
+    viewer.scene.globe.lightingFadeInDistance = 5_900_000;
+    viewer.scene.globe.atmosphereLightIntensity = 6.0;
+    viewer.scene.globe.atmosphereHueShift = -0.46;
+    viewer.scene.globe.atmosphereSaturationShift = 0.25;
+    viewer.scene.globe.atmosphereBrightnessShift = -0.34;
+    viewer.scene.globe.atmosphereRayleighScaleHeight = 4400;
+    viewer.scene.globe.atmosphereMieScaleHeight = 1800;
     viewer.scene.globe.depthTestAgainstTerrain = true;
-    (viewer.scene as any).light = new Cesium.DirectionalLight({
-      direction: new Cesium.Cartesian3(-0.75, 0.45, -0.35),
-      intensity: 2.2,
+    viewer.scene.light = new Cesium.DirectionalLight({
+      direction: new Cesium.Cartesian3(-0.66, -0.42, -0.623),
+      color: Cesium.Color.fromCssColorString('#fff6eb'),
+      intensity: 2.35,
     });
-    (viewer.scene.globe as any).lambertDiffuseMultiplier = 0.95;
+    (viewer.scene.globe as any).lambertDiffuseMultiplier = 0.96;
+
+    // Camera-locked planetary shadow: pure pitch-black (#000000) origin on the shadowed crescent
+    // fading smoothly out across Mars toward the sunlit hemisphere (Optical mode only).
+    const marsShadowMaterial = new Cesium.Material({
+      fabric: {
+        type: 'MarsCameraTwilightShadow',
+        uniforms: {
+          shadowStrength: initialShadowEnabled ? 1.0 : 0.0,
+          lightDirEC: new Cesium.Cartesian3(0.66, 0.42, 0.623),
+        },
+        source: `
+          uniform float shadowStrength;
+          uniform vec3 lightDirEC;
+          czm_material czm_getMaterial(czm_materialInput materialInput) {
+            czm_material material = czm_getDefaultMaterial(materialInput);
+            vec3 n = normalize(materialInput.normalEC);
+            vec3 l = normalize(lightDirEC);
+            float ndotl = dot(n, l);
+            float terminator = smoothstep(0.18, 0.80, ndotl);
+            float twilightCurve = pow(terminator, 1.52);
+            float limbSoft = mix(0.58, 1.0, smoothstep(0.02, 0.34, max(n.z, 0.0)));
+            float lit = twilightCurve * limbSoft;
+            float darkness = clamp((1.0 - lit) * 1.15, 0.0, 1.0) * clamp(shadowStrength, 0.0, 1.0);
+            material.diffuse = vec3(0.0, 0.0, 0.0);
+            material.emission = vec3(0.0, 0.0, 0.0);
+            material.specular = 0.0;
+            material.alpha = darkness;
+            return material;
+          }
+        `,
+      },
+      translucent: true,
+    });
+    viewer.scene.globe.material = marsShadowMaterial;
+    shadowMaterialRef.current = marsShadowMaterial;
+
     viewer.scene.sun = new Cesium.Sun();
     viewer.scene.moon = undefined;
 
-    // 1. Optical Base Layer: Viking Color Mosaic 232m (natural soft contrast)
+    const removeRenderError = viewer.scene.renderError?.addEventListener(
+      (_scene: unknown, error: unknown) => {
+        const message = error instanceof Error ? error.message : String(error ?? 'Unknown WebGL render error');
+        console.error('[MarsGlobe] Cesium render error:', error);
+        setWebglError(`3D Globe encountered a rendering error: ${message}`);
+      }
+    );
+
+    const configureLayerFiltering = (layer: CesiumImageryLayer) => {
+      layer.magnificationFilter = Cesium.TextureMagnificationFilter.LINEAR;
+      layer.minificationFilter = Cesium.TextureMinificationFilter.LINEAR;
+    };
+
+    // 1. Optical Base Layer: Viking Color Mosaic 232m (natural daytime color)
     const vikingProvider = new Cesium.WebMapTileServiceImageryProvider({
       url: 'https://trek.nasa.gov/tiles/Mars/EQ/Mars_Viking_MDIM21_ClrMosaic_global_232m/1.0.0/{Style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}.jpg',
       layer: 'Mars_Viking_MDIM21_ClrMosaic_global_232m',
@@ -754,34 +989,36 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
       if (e) e.retry = false;
     });
     const opticalLayer = viewer.imageryLayers.addImageryProvider(vikingProvider);
+    configureLayerFiltering(opticalLayer);
     opticalLayer.show = true;
     opticalLayer.contrast = 1.08;
-    opticalLayer.brightness = 0.96;
+    opticalLayer.brightness = 1.0;
     opticalLayer.saturation = 1.15;
     opticalLayer.gamma = 1.0;
     vikingLayerRef.current = opticalLayer;
 
-    // 2. High-Res MRO CTX Overlay: progressive 28% texture detail fade in Optical mode
+    // 2. High-Res MRO CTX Overlay (up to zoom level 13 / 6 m/px, smooth progressive blend below 900 km)
     const ctxProvider = new Cesium.UrlTemplateImageryProvider({
       url: 'https://astro.arcgis.com/arcgis/rest/services/OnMars/CTX/MapServer/tile/{z}/{y}/{x}',
       tilingScheme: marsTilingScheme,
       tileWidth: 512,
       tileHeight: 512,
       minimumLevel: 4,
-      maximumLevel: 11,
+      maximumLevel: 13,
     });
     const unbindCtxErr = ctxProvider.errorEvent.addEventListener((e: { retry?: boolean }) => {
       if (e) e.retry = false;
     });
     const ctxLayer = viewer.imageryLayers.addImageryProvider(ctxProvider);
+    configureLayerFiltering(ctxLayer);
     ctxLayer.show = false;
-    ctxLayer.alpha = 0.28;
-    ctxLayer.contrast = 1.05;
-    ctxLayer.brightness = 0.95;
+    ctxLayer.alpha = 0.0;
+    ctxLayer.contrast = 1.12;
+    ctxLayer.brightness = 1.0;
     ctxLayer.gamma = 1.0;
     ctxLayerRef.current = ctxLayer;
 
-    // 3. Grayscale MOLA/HRSC Terrain Relief Base (used beneath Temperature & Grayscale Elevation modes)
+    // 3. Grayscale MOLA/HRSC Terrain Relief Base (used beneath Temperature & Elevation modes)
     const reliefShadeProvider = new Cesium.WebMapTileServiceImageryProvider({
       url: 'https://trek.nasa.gov/tiles/Mars/EQ/Mars_MOLA_blend200ppx_HRSC_Shade_clon0dd_200mpp_lzw/1.0.0/{Style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}.jpg',
       layer: 'Mars_MOLA_blend200ppx_HRSC_Shade_clon0dd_200mpp_lzw',
@@ -795,6 +1032,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
       if (e) e.retry = false;
     });
     const reliefShadeLayer = viewer.imageryLayers.addImageryProvider(reliefShadeProvider);
+    configureLayerFiltering(reliefShadeLayer);
     reliefShadeLayer.show = false;
     reliefShadeLayer.saturation = 0.0;
     reliefShadeLayer.contrast = 1.45;
@@ -802,47 +1040,45 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     reliefShadeLayer.gamma = 0.9;
     reliefShadeLayerRef.current = reliefShadeLayer;
 
-    // 4. Global Temperature Map (Rainbow Thermal Scale 2048x1024, alpha = 0.85 over grayscale terrain relief)
-    const temperatureDataUrl = generateMarsTemperatureDataUrl(2048, 1024, temperatureLs);
-    const temperatureProvider = new Cesium.SingleTileImageryProvider({
-      url: temperatureDataUrl,
-      rectangle: Cesium.Rectangle.fromDegrees(-180, -90, 180, 90),
-      ellipsoid: marsEllipsoid,
-      tileWidth: 2048,
-      tileHeight: 1024,
+    // 4. Multi-Resolution Seasonal Temperature Pyramid (Levels 0-12, bilinear NASA MGS TES)
+    const temperatureProvider = createMarsProceduralImageryProvider({
+      Cesium,
+      tilingScheme: marsTilingScheme,
+      mode: 'temperature',
+      solarLongitudeLs: temperatureLs,
+      maximumLevel: 12,
     });
     const temperatureLayer = viewer.imageryLayers.addImageryProvider(temperatureProvider);
+    configureLayerFiltering(temperatureLayer);
     temperatureLayer.show = false;
     temperatureLayer.alpha = 0.85;
     temperatureLayer.contrast = 1.12;
     temperatureLayerRef.current = temperatureLayer;
     loadedTemperatureLsRef.current = temperatureLs;
 
-    // 5. Surface Radiation Layer (MSL RAD Black-to-Neon-Green 2048x1024, alpha = 0.88 over darkened base)
-    const radiationDataUrl = generateMarsRadiationDataUrl(2048, 1024);
-    const radiationProvider = new Cesium.SingleTileImageryProvider({
-      url: radiationDataUrl,
-      rectangle: Cesium.Rectangle.fromDegrees(-180, -90, 180, 90),
-      ellipsoid: marsEllipsoid,
-      tileWidth: 2048,
-      tileHeight: 1024,
+    // 5. Multi-Resolution Surface Radiation Pyramid (Levels 0-12, MSL RAD calibrated)
+    const radiationProvider = createMarsProceduralImageryProvider({
+      Cesium,
+      tilingScheme: marsTilingScheme,
+      mode: 'radiation',
+      maximumLevel: 12,
     });
     const radiationLayer = viewer.imageryLayers.addImageryProvider(radiationProvider);
+    configureLayerFiltering(radiationLayer);
     radiationLayer.show = false;
     radiationLayer.alpha = 0.88;
     radiationLayer.contrast = 1.45;
     radiationLayerRef.current = radiationLayer;
 
-    // 6. Grayscale Elevation Hypsometry (Black = Lowest -8 km, Mid Gray = 0 km, White = Highest +21 km)
-    const elevationGrayscaleUrl = generateMarsElevationGrayscaleDataUrl(2048, 1024);
-    const elevationProvider = new Cesium.SingleTileImageryProvider({
-      url: elevationGrayscaleUrl,
-      rectangle: Cesium.Rectangle.fromDegrees(-180, -90, 180, 90),
-      ellipsoid: marsEllipsoid,
-      tileWidth: 2048,
-      tileHeight: 1024,
+    // 6. Multi-Resolution Grayscale Elevation Pyramid (Levels 0-12, crisp below 40 km)
+    const elevationProvider = createMarsProceduralImageryProvider({
+      Cesium,
+      tilingScheme: marsTilingScheme,
+      mode: 'elevation',
+      maximumLevel: 12,
     });
     const elevationLayer = viewer.imageryLayers.addImageryProvider(elevationProvider);
+    configureLayerFiltering(elevationLayer);
     elevationLayer.show = false;
     elevationLayer.alpha = 0.72;
     elevationLayer.saturation = 0.0;
@@ -859,7 +1095,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     const roverCloseState = new Map<string, boolean>();
     const surfaceHorizonPoints = new Map<string, unknown>();
     const pinEyeOffset = new Cesium.Cartesian3(0.0, 0.0, -10000.0);
-    const farLabelOffset = new Cesium.Cartesian2(0, -10);
+    const farLabelOffset = new Cesium.Cartesian2(0, -6);
     const closeLabelOffset = new Cesium.Cartesian2(0, 78);
     const roverCloseLabelOffset = new Cesium.Cartesian2(0, 48);
     const getExaggeratedSurfacePosition = (
@@ -986,13 +1222,23 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
       const colorHex = CATEGORY_COLORS[target.category];
       const cesiumColor = Cesium.Color.fromCssColorString(colorHex);
       const targetElevation = getMarsElevation(target.latitude, target.longitude, 4);
-      const labelDistanceDisplayCondition = DENSE_REGION_LABEL_IDS.has(target.id)
-        ? new Cesium.DistanceDisplayCondition(0, 5_000_000)
-        : undefined;
+      const isPrimaryLabel =
+        target.category === 'satellite'
+          ? PRIMARY_GLOBAL_SATELLITE_IDS.has(target.id)
+          : target.category === 'rover'
+            ? PRIMARY_GLOBAL_ROVER_IDS.has(target.id)
+            : PRIMARY_GLOBAL_LANDMARK_IDS.has(target.id);
+      const labelDistanceDisplayCondition = isPrimaryLabel
+        ? undefined
+        : new Cesium.DistanceDisplayCondition(
+            0,
+            target.category === 'satellite' ? 8_500_000 : 4_800_000
+          );
 
       if (target.category === 'satellite' && target.orbit) {
         const positionProperty = new Cesium.CallbackProperty(() => {
-          const pos = computeSatelliteCartesian(target, simSecondsRef.current);
+          const liveElem = liveOrbiterElementsRef.current[target.id];
+          const pos = computeSatelliteCartesian(target, getEffectiveEpochMs(), liveElem);
           return new Cesium.Cartesian3(pos.x, pos.y, pos.z);
         }, false);
         let lastSatelliteLabelUpdate = 0;
@@ -1013,7 +1259,8 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
             lastSatelliteLabelLs !== temperatureSeason ||
             now - lastSatelliteLabelUpdate >= 500
           ) {
-            const subpoint = computeSatelliteCartesian(target, simSecondsRef.current);
+            const liveElem = liveOrbiterElementsRef.current[target.id];
+            const subpoint = computeSatelliteCartesian(target, getEffectiveEpochMs(), liveElem);
             satelliteLabelText = getTargetPinLabel(
               target,
               true,
@@ -1032,6 +1279,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
           id: target.id,
           name: target.name,
           position: positionProperty,
+          show: showSatellitesRef.current,
           billboard: {
             image: createGlowPinDataUri(colorHex, 'satellite', false),
             scale: 0.5,
@@ -1075,25 +1323,72 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
         spacecraftMap.set(target.id, spacecraftEntity);
         satCloseState.set(target.id, false);
 
-        const ringPts = sampleSatelliteOrbitArc(target, 0, 360, 128, false).map(
-          (p) => new Cesium.Cartesian3(p.x, p.y, p.z)
-        );
-        viewer.entities.add({
+        // Cache body-fixed 360-degree orbit ring points & refresh when Mars rotates > ~15s effective time
+        let cachedRingEpochMs = -1;
+        let cachedRingSource = '';
+        let cachedRingCartesians: unknown[] = [];
+        const ringPositions = new Cesium.CallbackProperty(() => {
+          if (!showSatellitesRef.current) return [];
+          const effMs = getEffectiveEpochMs();
+          const liveElem = liveOrbiterElementsRef.current[target.id];
+          const srcTag = liveElem?.syncedAtUtc ?? '';
+          if (Math.abs(effMs - cachedRingEpochMs) > 15_000 || cachedRingSource !== srcTag) {
+            cachedRingEpochMs = effMs;
+            cachedRingSource = srcTag;
+            cachedRingCartesians = sampleSatelliteOrbitArc(
+              target,
+              effMs,
+              360,
+              128,
+              false,
+              liveElem
+            ).map((p) => new Cesium.Cartesian3(p.x, p.y, p.z));
+          }
+          return cachedRingCartesians;
+        }, false);
+        const orbitRingEntity = viewer.entities.add({
           id: `${target.id}-orbit-ring`,
+          show: showSatellitesRef.current,
           polyline: {
-            positions: ringPts,
+            positions: ringPositions,
             width: 1.25,
             material: cesiumColor.withAlpha(0.22),
           },
         });
+        orbitRingEntitiesRef.current.set(target.id, orbitRingEntity);
 
+        let lastWakeSampleAt = 0;
+        let cachedWakeEpochMs = -1;
+        let cachedWakeSource = '';
+        let cachedWakeCartesians: unknown[] = [];
         const wakePositions = new Cesium.CallbackProperty(() => {
-          return sampleSatelliteOrbitArc(target, simSecondsRef.current, 100, 40, true).map(
-            (p) => new Cesium.Cartesian3(p.x, p.y, p.z)
-          );
+          if (!showSatellitesRef.current) return [];
+          const now = performance.now();
+          const effMs = getEffectiveEpochMs();
+          const liveElem = liveOrbiterElementsRef.current[target.id];
+          const srcTag = liveElem?.syncedAtUtc ?? '';
+          if (
+            now - lastWakeSampleAt >= 120 ||
+            Math.abs(effMs - cachedWakeEpochMs) > 2500 ||
+            cachedWakeSource !== srcTag
+          ) {
+            lastWakeSampleAt = now;
+            cachedWakeEpochMs = effMs;
+            cachedWakeSource = srcTag;
+            cachedWakeCartesians = sampleSatelliteOrbitArc(
+              target,
+              effMs,
+              100,
+              36,
+              true,
+              liveElem
+            ).map((p) => new Cesium.Cartesian3(p.x, p.y, p.z));
+          }
+          return cachedWakeCartesians;
         }, false);
-        viewer.entities.add({
+        const orbitWakeEntity = viewer.entities.add({
           id: `${target.id}-orbit-wake`,
+          show: showSatellitesRef.current,
           polyline: {
             positions: wakePositions,
             width: 3.0,
@@ -1104,20 +1399,25 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
             }),
           },
         });
+        orbitWakeEntitiesRef.current.set(target.id, orbitWakeEntity);
       } else if (target.category === 'rover') {
-        // Rovers show compact orange badge (>35 km) and reveal surface rover sprite (<=35 km)
-        const roverSurfacePos = createSurfacePositionProperty(
-          target.latitude,
-          target.longitude,
-          targetElevation,
-          40
-        );
+        // Rovers dynamically bind to live/cached NASA telemetry coordinates when available
+        const roverSurfacePos = new Cesium.CallbackProperty(() => {
+          const coords = getRoverCoords(target);
+          return getExaggeratedSurfacePosition(
+            coords.latitude,
+            coords.longitude,
+            coords.elevationMeters,
+            40
+          );
+        }, false);
         roverPositions.set(target.id, roverSurfacePos);
 
         const roverPin = viewer.entities.add({
           id: target.id,
           name: target.name,
           position: roverSurfacePos,
+          show: showRoversRef.current,
           billboard: {
             image: createGlowPinDataUri(colorHex, 'rover', false),
             scale: 0.5,
@@ -1487,7 +1787,11 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
         entityId.startsWith('__mars-region-')
       ) return undefined;
       const normalizedId = entityId.replace(/-(spacecraft|rover)$/, '');
-      return MARS_TARGETS.find((t) => t.id === normalizedId);
+      const found = MARS_TARGETS.find((t) => t.id === normalizedId);
+      if (!found) return undefined;
+      if (found.category === 'satellite' && !showSatellitesRef.current) return undefined;
+      if (found.category === 'rover' && !showRoversRef.current) return undefined;
+      return found;
     };
 
     const createTerrainRingSamples = (
@@ -1810,9 +2114,86 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
       }
     }, Cesium.ScreenSpaceEventType.LEFT_DOUBLE_CLICK);
 
-    // preRender: Horizon-Occlusion Check + Satellite Badge <-> Spacecraft LOD + Rover Badge <-> Surface Sprite LOD
+    // Scratch vectors for zero-allocation camera-relative Google Earth lighting
+    const scratchSubCamNormal = new Cesium.Cartesian3();
+    const scratchCamDir = new Cesium.Cartesian3();
+    const scratchCamUp = new Cesium.Cartesian3();
+    const scratchCamRight = new Cesium.Cartesian3();
+    const scratchLightDir = new Cesium.Cartesian3();
+
+    const updateCameraDaylight = () => {
+      if (viewer.isDestroyed()) return;
+
+      if (!sunShadowEnabledRef.current || mapStyleRef.current !== 'optical') {
+        if (shadowMaterialRef.current?.uniforms) {
+          shadowMaterialRef.current.uniforms.shadowStrength = 0.0;
+        }
+        return;
+      }
+
+      const camCarto = marsEllipsoid.cartesianToCartographic(viewer.camera.positionWC);
+      const camHeight = camCarto ? Math.max(0, camCarto.height) : 9_200_000;
+      const altT = Math.max(0, Math.min(1, (camHeight - 800_000) / (2_500_000 - 800_000)));
+      const smoothAlt = altT * altT * (3 - 2 * altT);
+      if (shadowMaterialRef.current?.uniforms) {
+        shadowMaterialRef.current.uniforms.shadowStrength = smoothAlt;
+      }
+
+      const sceneLight = viewer.scene.light as { direction?: unknown } | undefined;
+      if (!sceneLight?.direction) return;
+
+      const camPos = viewer.camera.positionWC;
+      const camDir = viewer.camera.directionWC;
+      const camUpRaw = (viewer.camera as any).upWC ?? (viewer.camera as any).up;
+      if (
+        !camPos ||
+        !camDir ||
+        !camUpRaw ||
+        Cesium.Cartesian3.magnitudeSquared(camPos) <= 1e-8 ||
+        Cesium.Cartesian3.magnitudeSquared(camDir) <= 1e-8 ||
+        Cesium.Cartesian3.magnitudeSquared(camUpRaw) <= 1e-8
+      ) {
+        return;
+      }
+
+      Cesium.Cartesian3.normalize(camPos, scratchSubCamNormal);
+      Cesium.Cartesian3.normalize(camDir, scratchCamDir);
+      Cesium.Cartesian3.normalize(camUpRaw, scratchCamUp);
+      Cesium.Cartesian3.cross(scratchCamDir, scratchCamUp, scratchCamRight);
+      if (Cesium.Cartesian3.magnitudeSquared(scratchCamRight) > 1e-8) {
+        Cesium.Cartesian3.normalize(scratchCamRight, scratchCamRight);
+      } else {
+        scratchCamRight.x = 0;
+        scratchCamRight.y = 0;
+        scratchCamRight.z = 0;
+      }
+
+      // Match eye-space lightDirEC = (+0.66, +0.42, +0.623) so the shadow origin is pitch black
+      // along the dark crescent and fades smoothly into the sunlit Martian hemisphere.
+      scratchLightDir.x =
+        0.623 * scratchCamDir.x - 0.66 * scratchCamRight.x - 0.42 * scratchCamUp.x;
+      scratchLightDir.y =
+        0.623 * scratchCamDir.y - 0.66 * scratchCamRight.y - 0.42 * scratchCamUp.y;
+      scratchLightDir.z =
+        0.623 * scratchCamDir.z - 0.66 * scratchCamRight.z - 0.42 * scratchCamUp.z;
+
+      if (Cesium.Cartesian3.magnitudeSquared(scratchLightDir) > 1e-8) {
+        Cesium.Cartesian3.normalize(scratchLightDir, scratchLightDir);
+        Cesium.Cartesian3.clone(scratchLightDir, sceneLight.direction);
+      }
+    };
+
+    updateCameraDaylight();
+
+    // preUpdate runs right before UniformState updates frame lighting
+    const removePreUpdate = viewer.scene.preUpdate.addEventListener(() => {
+      updateCameraDaylight();
+    });
+
+    // preRender: Horizon-Occlusion & Satellite/Rover LOD
     const removePreRender = viewer.scene.preRender.addEventListener(() => {
       if (viewer.isDestroyed()) return;
+
       const occluder = new Cesium.EllipsoidalOccluder(marsEllipsoid, viewer.camera.positionWC);
 
       for (const target of MARS_TARGETS) {
@@ -1820,6 +2201,12 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
         if (!pin) continue;
 
         if (target.category === 'satellite') {
+          const spacecraftEntity = spacecraftMap.get(target.id);
+          if (!showSatellitesRef.current) {
+            pin.show = false;
+            if (spacecraftEntity) spacecraftEntity.show = false;
+            continue;
+          }
           const satPosition = pin.position?.getValue
             ? pin.position.getValue(viewer.clock.currentTime)
             : undefined;
@@ -1830,7 +2217,6 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
 
             pin.show = isFront;
 
-            const spacecraftEntity = spacecraftMap.get(target.id);
             if (spacecraftEntity) {
               spacecraftEntity.show = isFront && isCloseUp;
             }
@@ -1851,6 +2237,12 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
             }
           }
         } else if (target.category === 'rover') {
+          const roverSpriteEntity = roverMap.get(target.id);
+          if (!showRoversRef.current) {
+            pin.show = false;
+            if (roverSpriteEntity) roverSpriteEntity.show = false;
+            continue;
+          }
           const roverPositionProperty = roverPositions.get(target.id) as any;
           const roverPosition = roverPositionProperty?.getValue(viewer.clock.currentTime);
           if (roverPosition) {
@@ -1860,7 +2252,6 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
 
             pin.show = isFront;
 
-            const roverSpriteEntity = roverMap.get(target.id);
             if (roverSpriteEntity) {
               roverSpriteEntity.show = isFront && isCloseUp;
             }
@@ -1893,7 +2284,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
       }
     });
 
-    // postRender: Progressive MRO CTX fade, compass heading, camera scale, and cursor telemetry
+    // postRender: Progressive MRO CTX fade, atmospheric limb scale, compass heading, camera scale, and cursor telemetry
     let lastHeading = 0;
     let lastCameraTelemetryAt = 0;
 
@@ -1942,12 +2333,17 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
           const localTerrainHeight =
             getMarsElevation(cameraLatDeg, cameraLonDeg, 4) * MARS_TERRAIN_VERTICAL_EXAGGERATION;
           const altitudeAboveSurface = Math.max(0, cameraCarto.height - localTerrainHeight);
-          const atmosphereStrength = getHorizonAtmosphereStrength(altitudeAboveSurface);
-          const skyAtmosphere = viewer.scene.skyAtmosphere as any;
+          const lowAltBoost = getLowAltitudeAtmosphereBoost(altitudeAboveSurface);
+          const skyAtmosphere = viewer.scene.skyAtmosphere;
           if (skyAtmosphere) {
-            const hueShift = -0.5 * atmosphereStrength;
-            const saturationShift = 0.3 * atmosphereStrength;
-            const brightnessShift = -1 + 0.65 * atmosphereStrength;
+            // Subtle thin yellowish limb visible at all orbital altitudes (>500 km very small),
+            // smoothly widening & warming below 500 km as the camera approaches Mars.
+            const hueShift = -0.46 - 0.02 * lowAltBoost;
+            const saturationShift = 0.26 + 0.06 * lowAltBoost;
+            const brightnessShift = -0.26 + 0.20 * lowAltBoost;
+            const rayleighScaleHeight = Math.round(4600 + 4800 * lowAltBoost);
+            const mieScaleHeight = Math.round(1900 + 1700 * lowAltBoost);
+            const lightIntensity = 24.0 + 14.0 * lowAltBoost;
             if (
               Math.abs(skyAtmosphere.hueShift - hueShift) > 0.002 ||
               Math.abs(skyAtmosphere.saturationShift - saturationShift) > 0.002 ||
@@ -1956,6 +2352,9 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
               skyAtmosphere.hueShift = hueShift;
               skyAtmosphere.saturationShift = saturationShift;
               skyAtmosphere.brightnessShift = brightnessShift;
+              skyAtmosphere.atmosphereRayleighScaleHeight = rayleighScaleHeight;
+              skyAtmosphere.atmosphereMieScaleHeight = mieScaleHeight;
+              skyAtmosphere.atmosphereLightIntensity = lightIntensity;
             }
           }
 
@@ -2040,6 +2439,14 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     const handleContextRestored = () => {
       setWebglError(null);
     };
+    const handleContainerWheel = (e: WheelEvent) => {
+      cancelCameraOrientationAnimation();
+      // Prevent browser tab zoom when pinching on a laptop trackpad (ctrlKey + wheel)
+      if (e.ctrlKey && e.cancelable) {
+        e.preventDefault();
+      }
+    };
+    container.addEventListener('wheel', handleContainerWheel, { passive: false });
     canvas.addEventListener('webglcontextlost', handleContextLost);
     canvas.addEventListener('webglcontextrestored', handleContextRestored);
     canvas.addEventListener('pointerleave', handlePointerLeave);
@@ -2052,19 +2459,24 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
       const dtSec = Math.min(0.1, (now - lastFrameTime) / 1000);
       lastFrameTime = now;
 
-      const multiplier = telemetryModeRef.current === 'simulation100x' ? 100 : 1;
-      simSecondsRef.current += dtSec * multiplier;
+      if (telemetryModeRef.current === 'simulation100x') {
+        simBoostMsRef.current += dtSec * 99 * 1000;
+      }
 
       if (now - lastUiSyncTime > 250) {
         lastUiSyncTime = now;
+        const effectiveMs = getEffectiveEpochMs();
         const satUpdates: Record<string, LiveSatellitePosition> = {};
         for (const target of MARS_TARGETS) {
           if (target.category === 'satellite' && target.orbit) {
-            const pos = computeSatelliteCartesian(target, simSecondsRef.current);
+            const liveElem = liveOrbiterElementsRef.current[target.id];
+            const pos = computeSatelliteCartesian(target, effectiveMs, liveElem);
             satUpdates[target.id] = {
               latDeg: pos.latDeg,
               lonDeg: pos.lonDeg,
               altKm: pos.altKm,
+              velocityKmS: pos.velocityKmS,
+              source: liveElem?.source ?? 'utc-keplerian',
             };
           }
         }
@@ -2078,13 +2490,17 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     setIsReady(true);
 
     return () => {
+      stopContinuousZoomInternal();
       cancelAnimationFrame(rafId);
       if (cameraAnimationFrameRef.current !== null) {
         cancelAnimationFrame(cameraAnimationFrameRef.current);
         cameraAnimationFrameRef.current = null;
       }
+      removePreUpdate();
       removePreRender();
       removePostRender();
+      removeRenderError?.();
+      container.removeEventListener('wheel', handleContainerWheel);
       canvas.removeEventListener('webglcontextlost', handleContextLost);
       canvas.removeEventListener('webglcontextrestored', handleContextRestored);
       canvas.removeEventListener('pointerleave', handlePointerLeave);
@@ -2115,7 +2531,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
       if (mapStyle === 'optical') {
         opticalLayer.show = true;
         opticalLayer.contrast = 1.08;
-        opticalLayer.brightness = 0.96;
+        opticalLayer.brightness = 1.0;
         opticalLayer.saturation = 1.15;
         opticalLayer.gamma = 1.0;
       } else if (mapStyle === 'radiation') {
@@ -2161,22 +2577,30 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
   }, [mapStyle, isReady]);
 
   useEffect(() => {
+    if (telemetryMode === 'realtime') {
+      simBoostMsRef.current = 0;
+    }
+  }, [telemetryMode]);
+
+  useEffect(() => {
     if (!isReady) return;
     const viewer = viewerRef.current;
     const previousLayer = temperatureLayerRef.current;
-    const marsEllipsoid = marsEllipsoidRef.current;
-    if (!viewer || viewer.isDestroyed() || !previousLayer || !marsEllipsoid) return;
+    const marsTilingScheme = marsTilingSchemeRef.current;
+    if (!viewer || viewer.isDestroyed() || !previousLayer || !marsTilingScheme) return;
     if (loadedTemperatureLsRef.current === temperatureLs) return;
 
     const Cesium = window.Cesium;
-    const provider = new Cesium.SingleTileImageryProvider({
-      url: generateMarsTemperatureDataUrl(2048, 1024, temperatureLs),
-      rectangle: Cesium.Rectangle.fromDegrees(-180, -90, 180, 90),
-      ellipsoid: marsEllipsoid,
-      tileWidth: 2048,
-      tileHeight: 1024,
+    const provider = createMarsProceduralImageryProvider({
+      Cesium,
+      tilingScheme: marsTilingScheme,
+      mode: 'temperature',
+      solarLongitudeLs: temperatureLs,
+      maximumLevel: 12,
     });
     const nextLayer = viewer.imageryLayers.addImageryProvider(provider);
+    nextLayer.magnificationFilter = Cesium.TextureMagnificationFilter.LINEAR;
+    nextLayer.minificationFilter = Cesium.TextureMinificationFilter.LINEAR;
     nextLayer.show = mapStyleRef.current === 'temperature';
     nextLayer.alpha = 0.85;
     nextLayer.contrast = 1.12;
@@ -2198,9 +2622,21 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     if (!isReady) return;
     const viewer = viewerRef.current;
     if (!viewer || viewer.isDestroyed()) return;
-    viewer.scene.globe.enableLighting = sunShadowEnabled;
-    viewer.scene.globe.dynamicAtmosphereLighting = sunShadowEnabled;
-  }, [sunShadowEnabled, isReady]);
+    const effectiveShadow = sunShadowEnabled && mapStyle === 'optical';
+    viewer.scene.globe.enableLighting = effectiveShadow;
+    viewer.scene.globe.dynamicAtmosphereLighting = effectiveShadow;
+    if (shadowMaterialRef.current?.uniforms) {
+      if (!effectiveShadow) {
+        shadowMaterialRef.current.uniforms.shadowStrength = 0.0;
+      } else {
+        const marsEllipsoid = marsEllipsoidRef.current;
+        const camCarto = marsEllipsoid?.cartesianToCartographic(viewer.camera.positionWC);
+        const camHeight = camCarto ? Math.max(0, camCarto.height) : 9_200_000;
+        const altT = Math.max(0, Math.min(1, (camHeight - 800_000) / (2_500_000 - 800_000)));
+        shadowMaterialRef.current.uniforms.shadowStrength = altT * altT * (3 - 2 * altT);
+      }
+    }
+  }, [sunShadowEnabled, mapStyle, isReady]);
 
   useEffect(() => {
     if (!isReady) return;
@@ -2209,10 +2645,17 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
       const pin = pinEntitiesRef.current.get(target.id);
       const label = pin?.label as any;
       if (label) {
-        label.text = getTargetPinLabel(target, weatherEnabled, temperatureLs);
+        const coords = target.category === 'rover' ? getRoverCoords(target) : target;
+        label.text = getTargetPinLabel(
+          target,
+          weatherEnabled,
+          temperatureLs,
+          coords.latitude,
+          coords.longitude
+        );
       }
     }
-  }, [weatherEnabled, temperatureLs, isReady]);
+  }, [weatherEnabled, temperatureLs, liveRovers, isReady]);
 
   useEffect(() => {
     if (!measureMode && isReady) {
@@ -2252,25 +2695,49 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
 
     const target = MARS_TARGETS.find((item) => item.id === selectedTargetId);
     if (!target || target.category !== 'landmark') return;
-    const outline = MARS_FEATURE_OUTLINES[target.id as keyof typeof MARS_FEATURE_OUTLINES];
-    if (!outline) return;
+    const areaInfo = getLocationAreaInfo(target);
+    if (!areaInfo) return;
 
     const Cesium = window.Cesium;
     const marsEllipsoid = marsEllipsoidRef.current;
     if (!marsEllipsoid) return;
     const positions = Cesium.Cartesian3.fromDegreesArray(
-      outline.ringLonLat.flatMap(([lon, lat]) => [lon, lat]),
+      areaInfo.ringLonLat.flatMap(([lon, lat]) => [lon, lat]),
       marsEllipsoid
     );
     const regionColor = Cesium.Color.fromCssColorString('#22D3EE');
+
+    if (areaInfo.isPolarCap && areaInfo.polarCenterLatDeg !== undefined) {
+      const radiusMeters = areaInfo.radiusKm * 1000;
+      selectedRegionEntityRef.current = viewer.entities.add({
+        id: `__mars-region-${target.id}`,
+        name: `${areaInfo.name} — ${areaInfo.dimensionLabel}`,
+        position: Cesium.Cartesian3.fromDegrees(0, areaInfo.polarCenterLatDeg, 0, marsEllipsoid),
+        ellipse: {
+          semiMajorAxis: radiusMeters,
+          semiMinorAxis: radiusMeters,
+          heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+          material: regionColor.withAlpha(0.22),
+          outline: false,
+        },
+        polyline: {
+          positions,
+          clampToGround: true,
+          width: 2.5,
+          material: regionColor.withAlpha(0.92),
+        },
+      });
+      return;
+    }
+
     selectedRegionEntityRef.current = viewer.entities.add({
       id: `__mars-region-${target.id}`,
-      name: `${outline.name} — approximate USGS/IAU Gazetteer footprint`,
+      name: `${areaInfo.name} — ${areaInfo.dimensionLabel}`,
       polygon: {
         hierarchy: new Cesium.PolygonHierarchy(positions),
         heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
         perPositionHeight: false,
-        material: regionColor.withAlpha(0.2),
+        material: regionColor.withAlpha(0.22),
         outline: false,
       },
       polyline: {
@@ -2281,6 +2748,30 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
       },
     });
   }, [selectedTargetId, isReady]);
+
+  // Immediately toggle satellite and rover badge/orbit visibility from left-margin controls
+  useEffect(() => {
+    if (!isReady) return;
+    for (const target of MARS_TARGETS) {
+      if (target.category === 'satellite') {
+        const ring = orbitRingEntitiesRef.current.get(target.id);
+        const wake = orbitWakeEntitiesRef.current.get(target.id);
+        if (ring) ring.show = showSatellites;
+        if (wake) wake.show = showSatellites;
+        if (!showSatellites) {
+          const pin = pinEntitiesRef.current.get(target.id);
+          const craft = spacecraftEntitiesRef.current.get(target.id);
+          if (pin) pin.show = false;
+          if (craft) craft.show = false;
+        }
+      } else if (target.category === 'rover' && !showRovers) {
+        const pin = pinEntitiesRef.current.get(target.id);
+        const rover = roverEntitiesRef.current.get(target.id);
+        if (pin) pin.show = false;
+        if (rover) rover.show = false;
+      }
+    }
+  }, [showSatellites, showRovers, isReady]);
 
   return (
     <div className="relative w-full h-full bg-black">
