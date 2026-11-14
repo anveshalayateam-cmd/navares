@@ -888,7 +888,10 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
       ? MOBILE_RESOLUTION_SCALE
       : Math.min(window.devicePixelRatio || 1, DESKTOP_MAX_RESOLUTION_SCALE);
 
-    // Smooth continuous camera motion requires the render loop to run every frame.
+    // Smooth continuous camera motion requires the render loop to run every frame. Cesium's
+    // native drag inertia (ScreenSpaceCameraController) keeps moving the camera after pointer
+    // release, so requestRenderMode must stay false or the coast would freeze the instant the
+    // pointer lifts and only repaint on explicit requestRender() calls.
     viewer.scene.requestRenderMode = false;
 
     viewer.imageryLayers.removeAll(true);
@@ -906,9 +909,9 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     controller.enableTilt = true;
     controller.enableTranslate = true;
     controller.zoomFactor = 5.0 * CAMERA_INPUT_SENSITIVITY_MULTIPLIER;
-    controller.inertiaZoom = 0.85;
-    controller.inertiaSpin = 0.94;
-    controller.inertiaTranslate = 0.94;
+    controller.inertiaZoom = 0.88;
+    controller.inertiaSpin = 0.95;
+    controller.inertiaTranslate = 0.95;
     controller.maximumMovementRatio = 0.05;
     controller.bounceAnimationTime = 0;
     controller.zoomEventTypes = [
