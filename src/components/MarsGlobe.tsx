@@ -848,6 +848,11 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
         infoBox: false,
         selectionIndicator: false,
         creditContainer: document.createElement('div'),
+        // Continuous render loop: Cesium's native drag inertia (ScreenSpaceCameraController)
+        // keeps moving the camera after pointer release, so every frame must render for the
+        // coasting glide to appear. requestRenderMode would freeze the globe the instant the
+        // pointer lifts and only repaint on explicit requestRender() calls.
+        requestRenderMode: false,
       });
     } catch (err) {
       setWebglError(
@@ -875,9 +880,9 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     controller.enableTilt = true;
     controller.enableTranslate = true;
     controller.zoomFactor = 5.0 * CAMERA_INPUT_SENSITIVITY_MULTIPLIER;
-    controller.inertiaZoom = 0.85;
-    controller.inertiaSpin = 0.94;
-    controller.inertiaTranslate = 0.94;
+    controller.inertiaZoom = 0.88;
+    controller.inertiaSpin = 0.95;
+    controller.inertiaTranslate = 0.95;
     controller.maximumMovementRatio = 0.05;
     controller.bounceAnimationTime = 0;
     controller.zoomEventTypes = [
