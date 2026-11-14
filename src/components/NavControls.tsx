@@ -4,10 +4,12 @@ import { Globe, Minus, Plus, Route, Ruler } from 'lucide-react';
 interface NavControlsProps {
   headingRad: number;
   tiltDeg: number;
+  cameraAltitudeMeters: number | null;
   measureMode: boolean;
   routeMode: boolean;
   sunShadowEnabled: boolean;
   onToggleMeasure: () => void;
+  onToggle3DView: () => void;
   onToggleRouteMode: () => void;
   onZoomIn: () => void;
   onZoomOut: () => void;
@@ -38,10 +40,12 @@ function CompassRose({ headingDeg }: { headingDeg: number }) {
 export function NavControls({
   headingRad,
   tiltDeg,
+  cameraAltitudeMeters,
   measureMode,
   routeMode,
   sunShadowEnabled,
   onToggleMeasure,
+  onToggle3DView,
   onToggleRouteMode,
   onZoomIn,
   onZoomOut,
@@ -52,6 +56,9 @@ export function NavControls({
   onToggleSunShadow,
 }: NavControlsProps) {
   const headingDeg = ((headingRad * 180) / Math.PI + 360) % 360;
+  const isPerspectiveView = tiltDeg >= 2;
+  const viewToggleLabel = isPerspectiveView ? '2D' : '3D';
+  const isAltitudeLocked = cameraAltitudeMeters === null || cameraAltitudeMeters > 2_000_000;
   const [compassOpen, setCompassOpen] = useState(false);
   const compassRef = useRef<HTMLDivElement | null>(null);
 
@@ -116,6 +123,18 @@ export function NavControls({
           }`}
         >
           <Ruler className="h-4 w-4" aria-hidden="true" />
+        </button>
+
+        <button
+          type="button"
+          onClick={onToggle3DView}
+          disabled={isAltitudeLocked}
+          aria-label={`Switch to ${viewToggleLabel} view`}
+          aria-pressed={isPerspectiveView}
+          title={isAltitudeLocked ? '3D/2D tilt controls unlock below 2,000 km' : `Switch to ${viewToggleLabel} view`}
+          className="flex h-10 w-10 items-center justify-center rounded-full border border-cyan-300/25 bg-[#0B0F17]/82 text-[11px] font-bold tracking-wide text-cyan-100 shadow-2xl backdrop-blur-md transition-all hover:bg-cyan-400/15 hover:text-white disabled:cursor-not-allowed disabled:border-slate-500/20 disabled:bg-slate-700/25 disabled:text-slate-500 disabled:opacity-40 disabled:shadow-none disabled:hover:bg-slate-700/25"
+        >
+          {viewToggleLabel}
         </button>
       </div>
 

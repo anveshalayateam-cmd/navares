@@ -29,7 +29,7 @@ import {
   getMarsSurfaceTempC,
 } from '../utils/marsOverlayMaps';
 import { CameraTelemetry, CursorTelemetry } from './CursorTelemetryPill';
-import { MapStyleMode, ReliefMode } from './MapStyleBar';
+import { MapStyleMode } from './MapStyleBar';
 import { LiveMeasurePreview, MeasureResult } from './MeasureToolOverlay';
 
 export interface LiveSatellitePosition {
@@ -43,6 +43,7 @@ export interface MarsGlobeHandle {
   zoomToTarget: (target: MarsTarget) => void;
   zoomIn: () => void;
   zoomOut: () => void;
+  toggle3DView: () => void;
   setCameraTilt: (tiltDeg: number) => void;
   setCameraHeading: (headingDeg: number) => void;
   resetNorth: () => void;
@@ -54,7 +55,6 @@ export interface MarsGlobeHandle {
 interface MarsGlobeProps {
   selectedTargetId: string | null;
   mapStyle: MapStyleMode;
-  reliefMode: ReliefMode;
   sunShadowEnabled: boolean;
   gridEnabled: boolean;
   telemetryMode: TelemetryMode;
@@ -80,12 +80,7 @@ const DENSE_REGION_LABEL_IDS = new Set([
   'oxia-planum',
 ]);
 
-const RELIEF_EXAGGERATION: Record<ReliefMode, number> = {
-  default: 2.2,
-  '1x': 1,
-  '2.5x': 2.5,
-  off: 0,
-};
+const MARS_TERRAIN_VERTICAL_EXAGGERATION = 2.2;
 
 const CTX_MAX_ALPHA = 0.28;
 const CTX_FADE_START_METERS = 650_000;
@@ -114,7 +109,6 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
   {
     selectedTargetId,
     mapStyle,
-    reliefMode,
     sunShadowEnabled,
     gridEnabled,
     telemetryMode,
@@ -374,7 +368,11 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     });
   };
 
-  const setCameraOrientationInternal = (headingRad: number, tiltDeg: number) => {
+  const setCameraOrientationInternal = (
+    headingRad: number,
+    tiltDeg: number,
+    duration = 360
+  ) => {
     const viewer = viewerRef.current;
     const Cesium = window.Cesium;
     const marsEllipsoid = marsEllipsoidRef.current;
@@ -417,7 +415,6 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     );
     const clampedTilt = Math.max(0, Math.min(80, tiltDeg));
     const startedAt = performance.now();
-    const duration = 360;
 
     cancelCameraOrientationAnimation();
     viewer.camera.cancelFlight();
@@ -456,6 +453,20 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     if (!viewer || viewer.isDestroyed()) return;
     const currentTilt = Math.max(0, Math.min(80, 90 + (viewer.camera.pitch * 180) / Math.PI));
     setCameraOrientationInternal((headingDeg * Math.PI) / 180, currentTilt);
+  };
+
+  const toggle3DViewInternal = () => {
+    const viewer = viewerRef.current;
+    if (!viewer || viewer.isDestroyed()) return;
+    const currentTilt = Math.max(
+      0,
+      Math.min(80, 90 + (viewer.camera.pitch * 180) / Math.PI)
+    );
+    setCameraOrientationInternal(
+      viewer.camera.heading,
+      currentTilt < 2 ? 60 : 0,
+      800
+    );
   };
 
   const resetNorthInternal = () => {
@@ -550,6 +561,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     zoomToTarget: zoomToTargetInternal,
     zoomIn: zoomInInternal,
     zoomOut: zoomOutInternal,
+    toggle3DView: toggle3DViewInternal,
     setCameraTilt: setCameraTiltInternal,
     setCameraHeading: setCameraHeadingInternal,
     resetNorth: resetNorthInternal,
@@ -693,7 +705,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString('#140a07');
     viewer.scene.globe.preloadSiblings = true;
     viewer.scene.globe.maximumScreenSpaceError = 1.5;
-    viewer.scene.verticalExaggeration = 2.2;
+    viewer.scene.verticalExaggeration = MARS_TERRAIN_VERTICAL_EXAGGERATION;
     viewer.scene.globe.enableLighting = true;
     viewer.scene.globe.dynamicAtmosphereLighting = true;
     viewer.scene.globe.dynamicAtmosphereLightingFromSun = false;
@@ -2062,14 +2074,6 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
       elevationLayer.show = mapStyle === 'elevation';
     }
   }, [mapStyle, isReady]);
-
-  useEffect(() => {
-    if (!isReady) return;
-    const viewer = viewerRef.current;
-    if (!viewer || viewer.isDestroyed()) return;
-    viewer.scene.verticalExaggeration = RELIEF_EXAGGERATION[reliefMode];
-    rebuildGridRef.current?.(gridEnabledRef.current, viewer.scene.verticalExaggeration);
-  }, [reliefMode, isReady]);
 
   useEffect(() => {
     if (!isReady) return;

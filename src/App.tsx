@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { CameraTelemetry, CursorTelemetry, CursorTelemetryPill } from './components/CursorTelemetryPill';
 import { InfoMenu } from './components/InfoMenu';
-import { MapStyleBar, MapStyleMode, ReliefMode } from './components/MapStyleBar';
+import { MapStyleBar, MapStyleMode } from './components/MapStyleBar';
 import {
   LiveSatellitePosition,
   MarsGlobe,
@@ -29,7 +29,6 @@ export default function App() {
 
   const [selectedTarget, setSelectedTarget] = useState<MarsTarget | null>(null);
   const [mapStyle, setMapStyle] = useState<MapStyleMode>('optical');
-  const [reliefMode, setReliefMode] = useState<ReliefMode>('default');
   const [telemetryMode, setTelemetryMode] = useState<TelemetryMode>('realtime');
   const [headingRad, setHeadingRad] = useState<number>(0);
   const [cameraTelemetry, setCameraTelemetry] = useState<CameraTelemetry | null>(null);
@@ -74,13 +73,6 @@ export default function App() {
 
   const handleZoomToSurface = useCallback((target: MarsTarget) => {
     globeRef.current?.zoomToTarget(target);
-  }, []);
-
-  const handleCycleReliefMode = useCallback(() => {
-    setReliefMode((current) => {
-      const modes: ReliefMode[] = ['default', '1x', '2.5x', 'off'];
-      return modes[(modes.indexOf(current) + 1) % modes.length];
-    });
   }, []);
 
   const handleClearMeasurement = useCallback(() => {
@@ -158,7 +150,6 @@ export default function App() {
         ref={globeRef}
         selectedTargetId={selectedTarget?.id ?? null}
         mapStyle={mapStyle}
-        reliefMode={reliefMode}
         sunShadowEnabled={sunShadowEnabled}
         gridEnabled={gridEnabled}
         telemetryMode={telemetryMode}
@@ -206,8 +197,6 @@ export default function App() {
       <MapStyleBar
         mapStyle={mapStyle}
         onChangeMapStyle={setMapStyle}
-        reliefMode={reliefMode}
-        onCycleReliefMode={handleCycleReliefMode}
         gridEnabled={gridEnabled}
         onToggleGrid={() => setGridEnabled((enabled) => !enabled)}
         weatherEnabled={weatherEnabled}
@@ -218,10 +207,12 @@ export default function App() {
       <NavControls
         headingRad={headingRad}
         tiltDeg={cameraTelemetry?.tiltDeg ?? 0}
+        cameraAltitudeMeters={cameraTelemetry?.altitudeAboveEllipsoidMeters ?? null}
         measureMode={measureMode}
         routeMode={routeMode}
         sunShadowEnabled={sunShadowEnabled}
         onToggleMeasure={handleToggleMeasure}
+        onToggle3DView={() => globeRef.current?.toggle3DView()}
         onToggleRouteMode={handleToggleRouteMode}
         onZoomIn={() => globeRef.current?.zoomIn()}
         onZoomOut={() => globeRef.current?.zoomOut()}

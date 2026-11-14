@@ -1,14 +1,11 @@
-import { CloudSun, Grid3X3, Mountain } from 'lucide-react';
+import { CloudSun, Grid3X3 } from 'lucide-react';
 import { MARS_TEMPERATURE_GRADIENT_CSS } from '../utils/marsOverlayMaps';
 
 export type MapStyleMode = 'optical' | 'temperature' | 'radiation' | 'elevation';
-export type ReliefMode = 'default' | '1x' | '2.5x' | 'off';
 
 interface MapStyleBarProps {
   mapStyle: MapStyleMode;
   onChangeMapStyle: (style: MapStyleMode) => void;
-  reliefMode: ReliefMode;
-  onCycleReliefMode: () => void;
   gridEnabled: boolean;
   onToggleGrid: () => void;
   weatherEnabled: boolean;
@@ -25,8 +22,6 @@ const STYLE_OPTIONS: Array<{ id: MapStyleMode; label: string; title: string }> =
 export function MapStyleBar({
   mapStyle,
   onChangeMapStyle,
-  reliefMode,
-  onCycleReliefMode,
   gridEnabled,
   onToggleGrid,
   weatherEnabled,
@@ -109,7 +104,7 @@ export function MapStyleBar({
         </div>
       )}
 
-      {/* Map Style Segmented Pill + Relief and Inline Weather Toggles */}
+      {/* Map Style Segmented Pill + Grid and Inline Weather Toggles */}
       <div className="pointer-events-auto flex flex-wrap items-center justify-center gap-2">
         <div
           role="radiogroup"
@@ -140,22 +135,6 @@ export function MapStyleBar({
             );
           })}
         </div>
-
-        <button
-          type="button"
-          aria-label={`3D Relief: ${reliefMode === 'default' ? '2.2x' : reliefMode === 'off' ? 'Off' : reliefMode}`}
-          aria-pressed={reliefMode !== 'off'}
-          onClick={onCycleReliefMode}
-          className={`inline-flex items-center gap-2 rounded-full border px-3.5 py-2 text-xs font-medium backdrop-blur-md shadow-2xl transition-colors duration-150 whitespace-nowrap shrink-0 cursor-pointer ${
-            reliefMode === 'off'
-              ? 'border-white/15 bg-[#0B0F17]/82 text-slate-400 hover:text-white hover:bg-[#0B0F17]'
-              : 'border-orange-400/35 bg-orange-500/10 text-orange-100 hover:bg-orange-500/20'
-          }`}
-          title="Click to cycle 3D Relief: 2.2x default → 1x → 2.5x → Off"
-        >
-          <Mountain className="h-3.5 w-3.5 text-orange-300" aria-hidden="true" />
-          <span>3D Relief: {reliefMode === 'default' ? '2.2x' : reliefMode === 'off' ? 'Off' : reliefMode}</span>
-        </button>
 
         <button
           type="button"
