@@ -33,12 +33,19 @@ export interface CesiumImageryLayer {
 
 export interface CesiumViewer {
   trackedEntity?: CesiumEntity;
+  resolutionScale: number;
   cesiumWidget: {
     screenSpaceEventHandler: {
       removeInputAction: (type: unknown, modifier?: unknown) => void;
     };
   };
   scene: {
+    requestRenderMode: boolean;
+    postProcessStages: {
+      fxaa: {
+        enabled: boolean;
+      };
+    };
     globe: {
       baseColor: unknown;
       enableLighting: boolean;

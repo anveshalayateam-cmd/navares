@@ -22,3 +22,12 @@ ARES NAV — a React 19 + Vite + TypeScript 3D Mars globe viewer built on Cesium
 - `ScreenSpaceCameraController` is configured in `src/components/MarsGlobe.tsx` (the `controller` block near the Viewer init). Inertia, zoom limits, and input sensitivity live there.
 - `src/index.css` already applies `touch-action: none !important` to `#cesiumContainer`, `.cesium-viewer`, and the Cesium canvas — browser gestures are already disabled over the globe.
 - Custom camera-zoom paths bypass Cesium defaults and must be kept in sync: `startContinuousZoomInternal` (hold +/-), `wheelZoomInternal` (scroll wheel), and `zoomToTargetInternal` (range clamp). They share module constants `MIN_CAMERA_HEIGHT_METERS`, `MAX_CAMERA_HEIGHT_METERS`, and `CAMERA_INPUT_SENSITIVITY_MULTIPLIER`.
+
+## Rendering performance notes
+- `viewer.resolutionScale` is capped in the Viewer init: `Math.min(devicePixelRatio, 1.25)` on desktop, `1.0` on touch/mobile (`isMobileOrTouchDevice()` helper). Do not raise these caps without profiling — they dominate fill-rate cost.
+- FXAA is disabled adaptively: a `postRender` frame-rate sampler drops `scene.postProcessStages.fxaa.enabled` once sustained FPS falls below `FXAA_DISABLE_FPS_THRESHOLD` (55).
+- `globe.maximumScreenSpaceError` is `2` on desktop / `2.5` on touch (constants `DESKTOP_MAXIMUM_SCREEN_SPACE_ERROR`, `MOBILE_MAXIMUM_SCREEN_SPACE_ERROR`).
+- `scene.requestRenderMode` is explicitly `false` and `controller.inertiaSpin = 0.94` for continuous smooth gliding.
+- React state updates must stay throttled out of the per-frame paths: compass heading ~10/s (`HEADING_THROTTLE_MS`), cursor Lat/Lon picking ~15/s (`CURSOR_PICK_THROTTLE_MS`, skipped during live measure so the tooltip stays responsive), and live-satellite recompute only runs while `showSatellites` is on. Camera altitude/meters-per-pixel telemetry is already gated at 150 ms in `postRender`.
+- Disabled imagery layers must be hidden with `layer.show = false` (not just `alpha = 0`). The map-style cross-fade sets `show = true` only during the transition and restores `show = targetAlpha > 0.003` at the end.
+

@@ -147,6 +147,27 @@ const MIN_CAMERA_HEIGHT_METERS = 1500;
 const MAX_CAMERA_HEIGHT_METERS = 32_000_000;
 const CAMERA_INPUT_SENSITIVITY_MULTIPLIER = 0.6;
 
+// Rendering performance tuning: cap the WebGL backbuffer on High-DPI displays and relax
+// tile detail on constrained (touch/mobile) devices so camera gliding holds 60 FPS.
+const DESKTOP_MAX_RESOLUTION_SCALE = 1.25;
+const MOBILE_RESOLUTION_SCALE = 1.0;
+const DESKTOP_MAXIMUM_SCREEN_SPACE_ERROR = 2;
+const MOBILE_MAXIMUM_SCREEN_SPACE_ERROR = 2.5;
+// Disable FXAA (a full-screen post-process pass) once sustained frame rate falls below this.
+const FXAA_DISABLE_FPS_THRESHOLD = 55;
+const FPS_SAMPLE_WINDOW_MS = 1000;
+// Cap React state churn driven by the render loop to ~10-15 updates/second.
+const HEADING_THROTTLE_MS = 100;
+const CURSOR_PICK_THROTTLE_MS = 66;
+
+const isMobileOrTouchDevice = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  const coarsePointer =
+    typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches;
+  const touchCapable = 'ontouchstart' in window || (navigator.maxTouchPoints ?? 0) > 0;
+  return coarsePointer || touchCapable;
+};
+
 const CTX_MAX_ALPHA = 0.68;
 const CTX_FADE_START_METERS = 900_000;
 const CTX_FULL_ALPHA_METERS = 40_000;
@@ -860,6 +881,16 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
 
     viewerRef.current = viewer;
 
+    // Rendering performance: cap the WebGL backbuffer on High-DPI screens (full devicePixelRatio
+    // is wasteful) and relax it to 1.0 on touch/mobile devices where fill rate is the bottleneck.
+    const mobileOrTouch = isMobileOrTouchDevice();
+    viewer.resolutionScale = mobileOrTouch
+      ? MOBILE_RESOLUTION_SCALE
+      : Math.min(window.devicePixelRatio || 1, DESKTOP_MAX_RESOLUTION_SCALE);
+
+    // Smooth continuous camera motion requires the render loop to run every frame.
+    viewer.scene.requestRenderMode = false;
+
     viewer.imageryLayers.removeAll(true);
 
     viewer.cesiumWidget.screenSpaceEventHandler.removeInputAction(
@@ -916,7 +947,9 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     viewer.scene.globe.preloadSiblings = true;
     viewer.scene.globe.preloadAncestors = true;
     viewer.scene.globe.tileCacheSize = 800;
-    viewer.scene.globe.maximumScreenSpaceError = 1.35;
+    viewer.scene.globe.maximumScreenSpaceError = mobileOrTouch
+      ? MOBILE_MAXIMUM_SCREEN_SPACE_ERROR
+      : DESKTOP_MAXIMUM_SCREEN_SPACE_ERROR;
     viewer.scene.verticalExaggeration = MARS_TERRAIN_VERTICAL_EXAGGERATION;
     const initialShadowEnabled = sunShadowEnabledRef.current && mapStyleRef.current === 'optical';
     viewer.scene.globe.enableLighting = initialShadowEnabled;
@@ -1779,9 +1812,17 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
       return { cartesian, carto, latDeg, lonDeg, elevMeters };
     };
 
-    // Real-time cursor coordinates + live measure preview
+    // Real-time cursor coordinates + live measure preview. The globe picking work is throttled
+    // to ~15/s so dragging the camera does not trigger a React state update every mouse event.
+    let lastCursorMoveAt = 0;
     handler.setInputAction((movement: { endPosition: { x: number; y: number } }) => {
       lastCursorPositionRef.current = movement.endPosition;
+
+      const now = performance.now();
+      const inLiveMeasure = measureModeRef.current && ms.pointA && !ms.pointB;
+      if (!inLiveMeasure && now - lastCursorMoveAt < CURSOR_PICK_THROTTLE_MS) return;
+      lastCursorMoveAt = now;
+
       const pt = pickMarsSurfacePoint(movement.endPosition);
       if (!pt) {
         onCursorTelemetryChangeRef.current(null);
@@ -2321,6 +2362,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
 
     // postRender: Progressive MRO CTX fade, atmospheric limb scale, compass heading, camera scale, and cursor telemetry
     let lastHeading = 0;
+    let lastHeadingAt = 0;
     let lastCameraTelemetryAt = 0;
 
     let lastCursorPickAt = 0;
@@ -2330,10 +2372,29 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     const lastCursorCameraPosition = new Cesium.Cartesian3();
     const lastCursorCameraDirection = new Cesium.Cartesian3();
 
+    // Adaptive quality: sample real frame rate and drop FXAA if we cannot hold 60 FPS.
+    let fpsWindowStart = performance.now();
+    let fpsFrameCount = 0;
+    let fxaaDisabled = false;
+
     const removePostRender = viewer.scene.postRender.addEventListener(() => {
       if (viewer.isDestroyed()) return;
 
       const now = performance.now();
+
+      // Frame-rate sampler: FXAA is a full-screen pass, so shed it when the budget is missed.
+      fpsFrameCount += 1;
+      if (now - fpsWindowStart >= FPS_SAMPLE_WINDOW_MS) {
+        const measuredFps = (fpsFrameCount * 1000) / (now - fpsWindowStart);
+        if (measuredFps < FXAA_DISABLE_FPS_THRESHOLD && !fxaaDisabled) {
+          fxaaDisabled = true;
+          const fxaaStage = viewer.scene.postProcessStages?.fxaa;
+          if (fxaaStage) fxaaStage.enabled = false;
+        }
+        fpsWindowStart = now;
+        fpsFrameCount = 0;
+      }
+
       const camCarto = marsEllipsoid.cartesianToCartographic(viewer.camera.positionWC);
       const camHeight = camCarto ? camCarto.height : 9200000;
       const ctxOpacity = getCtxFadeAlpha(camHeight);
@@ -2342,9 +2403,14 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
         ctxLayerRef.current.show = mapStyleRef.current === 'optical' && ctxOpacity > 0.003;
       }
 
+      // Throttle the compass heading React update to ~10/s instead of every rendered frame.
       const currentHeading = viewer.camera.heading;
-      if (Math.abs(currentHeading - lastHeading) > 0.003) {
+      if (
+        Math.abs(currentHeading - lastHeading) > 0.003 &&
+        now - lastHeadingAt >= HEADING_THROTTLE_MS
+      ) {
         lastHeading = currentHeading;
+        lastHeadingAt = now;
         onHeadingChangeRef.current(currentHeading);
       }
 
@@ -2498,7 +2564,9 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
         simBoostMsRef.current += dtSec * 99 * 1000;
       }
 
-      if (now - lastUiSyncTime > 250) {
+      // Only recompute live orbiter telemetry while satellites are actually rendered; the
+      // simulation boost still advances above so the clock stays continuous when re-shown.
+      if (showSatellitesRef.current && now - lastUiSyncTime > 250) {
         lastUiSyncTime = now;
         const effectiveMs = getEffectiveEpochMs();
         const satUpdates: Record<string, LiveSatellitePosition> = {};
