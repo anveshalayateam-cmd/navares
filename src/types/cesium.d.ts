@@ -111,6 +111,9 @@ export interface CesiumViewer {
     sun?: unknown;
     moon?: unknown;
     backgroundColor: unknown;
+    skyBox?: {
+      show: boolean;
+    };
     verticalExaggeration: number;
     canvas: HTMLCanvasElement;
     pick: (windowPosition: unknown) => { id?: CesiumEntity } | undefined;

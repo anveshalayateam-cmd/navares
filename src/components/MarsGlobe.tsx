@@ -136,6 +136,13 @@ const PRIMARY_GLOBAL_ROVER_IDS = new Set([
 
 const MARS_TERRAIN_VERTICAL_EXAGGERATION = 2.2;
 
+// Astronomical starfield: CesiumJS's built-in Tycho-2 star catalog cubemap (derived from the
+// Hipparcos / Tycho-2 catalogues, NASA/Goddard SVS). Faces are resolved against the same Cesium
+// CDN release that index.html loads so the skybox never requests a missing local asset.
+const CESIUM_CDN_RELEASE_BASE =
+  'https://cesium.com/downloads/cesiumjs/releases/1.124/Build/Cesium/';
+const TYCHO_STARFIELD_SKYBOX_BASE = `${CESIUM_CDN_RELEASE_BASE}Assets/Textures/SkyBox/tycho2t3_80_`;
+
 const MIN_CAMERA_HEIGHT_METERS = 1500;
 const MAX_CAMERA_HEIGHT_METERS = 32_000_000;
 const CAMERA_INPUT_SENSITIVITY_MULTIPLIER = 0.6;
@@ -951,15 +958,19 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
             vec3 n = normalize(materialInput.normalEC);
             vec3 l = normalize(lightDirEC);
             float ndotl = dot(n, l);
-            float terminator = smoothstep(0.18, 0.80, ndotl);
-            float twilightCurve = pow(terminator, 1.52);
-            float limbSoft = mix(0.58, 1.0, smoothstep(0.02, 0.34, max(n.z, 0.0)));
-            float lit = twilightCurve * limbSoft;
-            float darkness = clamp((1.0 - lit) * 1.15, 0.0, 1.0) * clamp(shadowStrength, 0.0, 1.0);
+            // Smooth twilight ramp: 0 = deep night, 1 = full daylight, faded gradually across
+            // a soft terminator band so there is never a hard day/night edge.
+            float daylight = smoothstep(-0.08, 0.34, ndotl);
+            // Grazing limb stays marginally darker so the shadowed crescent melts into deep space.
+            float limbSoft = mix(0.82, 1.0, smoothstep(0.02, 0.30, max(n.z, 0.0)));
+            float lit = daylight * limbSoft;
+            // Night side is drawn fully black with zero ambient washout (alpha reaches 1.0 on
+            // the unlit hemisphere, so no atmosphere/ambient tint leaks through).
+            float darkness = (1.0 - lit) * clamp(shadowStrength, 0.0, 1.0);
             material.diffuse = vec3(0.0, 0.0, 0.0);
             material.emission = vec3(0.0, 0.0, 0.0);
             material.specular = 0.0;
-            material.alpha = darkness;
+            material.alpha = clamp(darkness, 0.0, 1.0);
             return material;
           }
         `,
@@ -971,6 +982,21 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
 
     viewer.scene.sun = new Cesium.Sun();
     viewer.scene.moon = undefined;
+
+    // Replace any custom/AI-generated space backdrop with CesiumJS's built-in Tycho-2 star
+    // catalog skybox so the starfield renders authentic astronomical star positions.
+    const starfieldSkyBox = new Cesium.SkyBox({
+      sources: {
+        positiveX: `${TYCHO_STARFIELD_SKYBOX_BASE}px.jpg`,
+        negativeX: `${TYCHO_STARFIELD_SKYBOX_BASE}mx.jpg`,
+        positiveY: `${TYCHO_STARFIELD_SKYBOX_BASE}py.jpg`,
+        negativeY: `${TYCHO_STARFIELD_SKYBOX_BASE}my.jpg`,
+        positiveZ: `${TYCHO_STARFIELD_SKYBOX_BASE}pz.jpg`,
+        negativeZ: `${TYCHO_STARFIELD_SKYBOX_BASE}mz.jpg`,
+      },
+    });
+    starfieldSkyBox.show = true;
+    viewer.scene.skyBox = starfieldSkyBox;
 
     const removeRenderError = viewer.scene.renderError?.addEventListener(
       (_scene: unknown, error: unknown) => {
@@ -2141,12 +2167,10 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
         return;
       }
 
-      const camCarto = marsEllipsoid.cartesianToCartographic(viewer.camera.positionWC);
-      const camHeight = camCarto ? Math.max(0, camCarto.height) : 9_200_000;
-      const altT = Math.max(0, Math.min(1, (camHeight - 800_000) / (2_500_000 - 800_000)));
-      const smoothAlt = altT * altT * (3 - 2 * altT);
+      // Full-strength night shading at every altitude so the unlit hemisphere stays pure black
+      // (no ambient washout) whether viewing from orbit or close to the surface.
       if (shadowMaterialRef.current?.uniforms) {
-        shadowMaterialRef.current.uniforms.shadowStrength = smoothAlt;
+        shadowMaterialRef.current.uniforms.shadowStrength = 1.0;
       }
 
       const sceneLight = viewer.scene.light as { direction?: unknown } | undefined;
@@ -2636,15 +2660,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     viewer.scene.globe.enableLighting = effectiveShadow;
     viewer.scene.globe.dynamicAtmosphereLighting = effectiveShadow;
     if (shadowMaterialRef.current?.uniforms) {
-      if (!effectiveShadow) {
-        shadowMaterialRef.current.uniforms.shadowStrength = 0.0;
-      } else {
-        const marsEllipsoid = marsEllipsoidRef.current;
-        const camCarto = marsEllipsoid?.cartesianToCartographic(viewer.camera.positionWC);
-        const camHeight = camCarto ? Math.max(0, camCarto.height) : 9_200_000;
-        const altT = Math.max(0, Math.min(1, (camHeight - 800_000) / (2_500_000 - 800_000)));
-        shadowMaterialRef.current.uniforms.shadowStrength = altT * altT * (3 - 2 * altT);
-      }
+      shadowMaterialRef.current.uniforms.shadowStrength = effectiveShadow ? 1.0 : 0.0;
     }
   }, [sunShadowEnabled, mapStyle, isReady]);
 

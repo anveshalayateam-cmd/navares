@@ -128,6 +128,15 @@ const DATA_ATTRIBUTIONS = [
       </>
     ),
   },
+  {
+    title: 'Background Starfield',
+    description: (
+      <>
+        Background Starfield: Hipparcos / Tycho-2 astronomical star catalog data (NASA/Goddard SVS
+        / CesiumJS).
+      </>
+    ),
+  },
 ];
 
 const COMPASS_DIRS = [
@@ -650,7 +659,7 @@ export function InfoMenu({ hasTargetCardOpen }: InfoMenuProps) {
               ) : activeModal === 'details' ? (
                 <>
                   {/* Highlighted Scientific Scale Note Callout */}
-                  <div className="rounded-xl border border-amber-400/30 bg-amber-500/[0.08] p-4">
+                  <div className="rounded-xl border border-amber-400/30 bg-amber-500/[0.08] p-4 space-y-2">
                     <div className="text-xs font-semibold text-amber-300 mb-1">
                       Scientific Scale Note
                     </div>
@@ -660,6 +669,15 @@ export function InfoMenu({ hasTargetCardOpen }: InfoMenuProps) {
                       <span className="font-mono-tabular font-semibold text-amber-200">~1,000×</span>{' '}
                       relative to planetary scale for better visual clarity and interactive
                       experience.
+                    </p>
+                    <p className="text-xs sm:text-[13px] leading-relaxed text-amber-100/95">
+                      Note: Custom 2D/3D vector sprites for rovers, landers, and orbiting satellites
+                      were generated with AI assistance.
+                    </p>
+                    <p className="text-xs sm:text-[13px] leading-relaxed text-amber-100/95">
+                      Disclaimer: 3D terrain heights, vertical exaggeration, and surface location
+                      markers are visual approximations for mission planning simulation and may
+                      differ from actual Martian topography and coordinates.
                     </p>
                   </div>
 
@@ -739,10 +757,12 @@ export function InfoMenu({ hasTargetCardOpen }: InfoMenuProps) {
                     <p className="text-xs sm:text-[13px] leading-relaxed text-slate-200">
                       Developed with the assistance of AI tools — including{' '}
                       <strong className="font-semibold text-white">Google AI Studio (Gemini)</strong>,{' '}
-                      <strong className="font-semibold text-white">Manus</strong>, and{' '}
-                      <strong className="font-semibold text-white">Google AI</strong> — used for
-                      code architecture, CesiumJS geospatial debugging, dataset structuring, and UI
-                      refinement.
+                      <strong className="font-semibold text-white">Manus</strong>,{' '}
+                      <strong className="font-semibold text-white">OpenHands</strong>, and{' '}
+                      <strong className="font-semibold text-white">Google AI</strong> — used for code
+                      architecture, CesiumJS geospatial debugging, dataset structuring, UI
+                      refinement, shader/lighting adjustments, and generating custom SVG/vector
+                      spacecraft sprites.
                     </p>
                   </div>
                 </>
