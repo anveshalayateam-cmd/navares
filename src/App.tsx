@@ -14,6 +14,7 @@ import {
 } from './components/MeasureToolOverlay';
 import { NavControls } from './components/NavControls';
 import { SearchBar } from './components/SearchBar';
+import { SurvivalRouteOverlay } from './components/SurvivalRouteOverlay';
 import { TargetInfoCard } from './components/TargetInfoCard';
 import { ProjectedWeatherBadge, WeatherBadges } from './components/WeatherBadges';
 import { MARS_TARGETS, MarsTarget, TelemetryMode } from './data/marsData';
@@ -22,6 +23,7 @@ import {
   MarsWeatherStation,
   fetchMarsWeatherTelemetry,
 } from './services/marsWeather';
+import { RouteEndpoint, SurvivalRouteResult } from './utils/marsPathfinder';
 
 export default function App() {
   const globeRef = useRef<MarsGlobeHandle | null>(null);
@@ -48,6 +50,11 @@ export default function App() {
   const [measureHasPointA, setMeasureHasPointA] = useState<boolean>(false);
   const [measureLivePreview, setMeasureLivePreview] = useState<LiveMeasurePreview | null>(null);
   const [measureResult, setMeasureResult] = useState<MeasureResult | null>(null);
+
+  // Multi-objective Optimal Astronaut Survival Route Pathfinder
+  const [routeMode, setRouteMode] = useState<boolean>(false);
+  const [routeStart, setRouteStart] = useState<RouteEndpoint | null>(null);
+  const [routeResult, setRouteResult] = useState<SurvivalRouteResult | null>(null);
 
   // Fetch NASA MSL REMS surface weather when Weather overlay is toggled ON
   useEffect(() => {
@@ -84,7 +91,40 @@ export default function App() {
     setMeasureMode(false);
   }, []);
 
-  // Keyboard shortcuts: Escape exits Measure Mode or closes Knowledge Card, R resets globe
+  const handleToggleMeasure = useCallback(() => {
+    setMeasureMode((prev) => {
+      const next = !prev;
+      if (next) {
+        globeRef.current?.clearSurvivalRoute();
+        setRouteMode(false);
+      }
+      return next;
+    });
+  }, []);
+
+  const handleToggleRouteMode = useCallback(() => {
+    setRouteMode((prev) => {
+      const next = !prev;
+      if (next) {
+        globeRef.current?.clearMeasurement();
+        setMeasureMode(false);
+      }
+      return next;
+    });
+  }, []);
+
+  const handleClearSurvivalRoute = useCallback(() => {
+    globeRef.current?.clearSurvivalRoute();
+  }, []);
+
+  const handleExitRouteMode = useCallback(() => {
+    if (!routeResult) {
+      globeRef.current?.clearSurvivalRoute();
+    }
+    setRouteMode(false);
+  }, [routeResult]);
+
+  // Keyboard shortcuts: Escape exits Measure/Route Mode or closes Knowledge Card, R resets globe
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
@@ -94,6 +134,11 @@ export default function App() {
         if (measureMode) {
           globeRef.current?.clearMeasurement();
           setMeasureMode(false);
+        } else if (routeMode) {
+          if (!routeResult) {
+            globeRef.current?.clearSurvivalRoute();
+          }
+          setRouteMode(false);
         } else {
           setSelectedTarget(null);
         }
@@ -103,7 +148,7 @@ export default function App() {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [measureMode]);
+  }, [measureMode, routeMode, routeResult]);
 
   return (
     <main className="relative h-screen w-screen overflow-hidden bg-black text-slate-100">
@@ -116,6 +161,7 @@ export default function App() {
         weatherEnabled={weatherEnabled}
         weatherStations={weatherStations}
         measureMode={measureMode}
+        routeMode={routeMode}
         onSelectTarget={setSelectedTarget}
         onHeadingChange={setHeadingRad}
         onLiveSatellitesUpdate={setLiveSatellites}
@@ -124,12 +170,15 @@ export default function App() {
         onMeasureHasPointAChange={setMeasureHasPointA}
         onMeasureLivePreviewChange={setMeasureLivePreview}
         onMeasureResultChange={setMeasureResult}
+        onRouteStartChange={setRouteStart}
+        onRouteResultChange={setRouteResult}
       />
 
       {/* Toggleable Surface Weather Telemetry Badges */}
       {weatherEnabled && (
         <WeatherBadges
           badges={weatherBadges}
+          selectedTargetId={selectedTarget?.id ?? null}
           onSelectStationTarget={handleSelectWeatherStationTarget}
         />
       )}
@@ -147,6 +196,15 @@ export default function App() {
         onExitMeasureMode={handleExitMeasureMode}
       />
 
+      {/* Optimal Astronaut Survival Pathfinder Banner & Telemetry Card */}
+      <SurvivalRouteOverlay
+        routeMode={routeMode}
+        startPoint={routeStart}
+        routeResult={routeResult}
+        onClearRoute={handleClearSurvivalRoute}
+        onExitRouteMode={handleExitRouteMode}
+      />
+
       {/* Bottom-Left Real-Time Cursor Surface Coordinates & Elevation Telemetry Pill */}
       <CursorTelemetryPill telemetry={cursorTelemetry} />
 
@@ -158,11 +216,13 @@ export default function App() {
         onToggleWeather={() => setWeatherEnabled((prev) => !prev)}
       />
 
-      {/* Control 3: Bottom-Right Compact Navigation Controls (Measure, Compass, Globe Reset, +, -) */}
+      {/* Control 3: Bottom-Right Compact Navigation Controls (Route, Measure, Compass, Globe Reset, +, -) */}
       <NavControls
         headingRad={headingRad}
         measureMode={measureMode}
-        onToggleMeasure={() => setMeasureMode((prev) => !prev)}
+        routeMode={routeMode}
+        onToggleMeasure={handleToggleMeasure}
+        onToggleRouteMode={handleToggleRouteMode}
         onZoomIn={() => globeRef.current?.zoomIn()}
         onZoomOut={() => globeRef.current?.zoomOut()}
         onResetNorth={() => globeRef.current?.resetNorth()}
@@ -174,6 +234,8 @@ export default function App() {
         <TargetInfoCard
           target={selectedTarget}
           liveSatellite={liveSatellites[selectedTarget.id]}
+          weatherEnabled={weatherEnabled}
+          weatherStation={weatherStations.find((s) => s.targetId === selectedTarget.id)}
           telemetryMode={telemetryMode}
           onChangeTelemetryMode={setTelemetryMode}
           onZoomToSurface={handleZoomToSurface}
@@ -181,7 +243,7 @@ export default function App() {
         />
       )}
 
-      {/* Top-Right 3-Dot Menu (Details & Data Sources / About) */}
+      {/* Top-Right 3-Dot Menu */}
       <InfoMenu hasTargetCardOpen={Boolean(selectedTarget)} />
     </main>
   );

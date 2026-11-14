@@ -270,117 +270,124 @@ function drawMroSpacecraft(ctx: CanvasRenderingContext2D, cx: number, cy: number
   ctx.translate(cx, cy);
   ctx.rotate(-0.14); // Subtle isometric roll angle
 
-  // Wide left & right solar array wings + deployment yokes
+  // Massive symmetrical rectangular solar array wings on long articulated yokes
   ctx.strokeStyle = '#cbd5e1';
-  ctx.lineWidth = 2.4;
+  ctx.lineWidth = 2.6;
   ctx.beginPath();
-  ctx.moveTo(-26, -6);
-  ctx.lineTo(-42, -14);
-  ctx.moveTo(-26, 6);
-  ctx.lineTo(-42, 14);
-  ctx.moveTo(26, -6);
-  ctx.lineTo(42, -14);
-  ctx.moveTo(26, 6);
-  ctx.lineTo(42, 14);
+  ctx.moveTo(-22, -7);
+  ctx.lineTo(-46, -15);
+  ctx.moveTo(-22, 7);
+  ctx.lineTo(-46, 15);
+  ctx.moveTo(22, -7);
+  ctx.lineTo(46, -15);
+  ctx.moveTo(22, 7);
+  ctx.lineTo(46, 15);
   ctx.stroke();
 
-  drawSolarPanelGrid(ctx, -118, -22, 76, 44, 6, 4);
-  drawSolarPanelGrid(ctx, 42, -22, 76, 44, 6, 4);
+  drawSolarPanelGrid(ctx, -124, -23, 78, 46, 6, 4);
+  drawSolarPanelGrid(ctx, 46, -23, 78, 46, 6, 4);
 
   // SHARAD radar dipole antennas extending aft
   ctx.strokeStyle = '#e2e8f0';
   ctx.lineWidth = 1.6;
   ctx.beginPath();
-  ctx.moveTo(-8, 22);
-  ctx.lineTo(-22, 54);
-  ctx.moveTo(8, 22);
-  ctx.lineTo(22, 54);
+  ctx.moveTo(-9, 26);
+  ctx.lineTo(-24, 58);
+  ctx.moveTo(9, 26);
+  ctx.lineTo(24, 58);
   ctx.stroke();
 
-  // HiRISE Telescope Barrel protruding downward/forward on the bus
+  // Prominent protruding black HiRISE telescope barrel
   ctx.save();
-  ctx.translate(0, 22);
+  ctx.translate(0, 24);
   const barrelGrad = ctx.createLinearGradient(-13, 0, 13, 0);
-  barrelGrad.addColorStop(0, '#1e293b');
-  barrelGrad.addColorStop(0.35, '#475569');
-  barrelGrad.addColorStop(0.7, '#0f172a');
+  barrelGrad.addColorStop(0, '#020617');
+  barrelGrad.addColorStop(0.35, '#1e293b');
+  barrelGrad.addColorStop(0.7, '#020617');
   barrelGrad.addColorStop(1, '#334155');
   ctx.fillStyle = barrelGrad;
   ctx.strokeStyle = '#94a3b8';
-  ctx.lineWidth = 1.2;
+  ctx.lineWidth = 1.3;
   ctx.beginPath();
-  ctx.roundRect(-12, -2, 24, 28, 3);
+  ctx.roundRect(-13, -2, 26, 36, 3);
   ctx.fill();
   ctx.stroke();
 
-  // HiRISE optical baffle aperture
-  const lensGrad = ctx.createRadialGradient(0, 26, 1, 0, 26, 11);
+  // HiRISE ribbed optical baffle rings
+  ctx.strokeStyle = 'rgba(148, 163, 184, 0.38)';
+  ctx.lineWidth = 1;
+  for (let ry = 8; ry <= 24; ry += 8) {
+    ctx.beginPath();
+    ctx.moveTo(-12, ry);
+    ctx.lineTo(12, ry);
+    ctx.stroke();
+  }
+
+  // HiRISE optical aperture lens
+  const lensGrad = ctx.createRadialGradient(0, 34, 1, 0, 34, 12);
   lensGrad.addColorStop(0, '#38bdf8');
   lensGrad.addColorStop(0.45, '#0c4a6e');
   lensGrad.addColorStop(1, '#020617');
   ctx.fillStyle = lensGrad;
   ctx.beginPath();
-  ctx.ellipse(0, 26, 11, 4.5, 0, 0, Math.PI * 2);
+  ctx.ellipse(0, 34, 12, 4.8, 0, 0, Math.PI * 2);
   ctx.fill();
   ctx.strokeStyle = '#cbd5e1';
-  ctx.lineWidth = 1.1;
+  ctx.lineWidth = 1.2;
   ctx.stroke();
   ctx.restore();
 
-  // Gold MLI thermal foil octagonal spacecraft bus
-  const foilGrad = ctx.createLinearGradient(-26, -24, 26, 24);
-  foilGrad.addColorStop(0, '#fde047');
-  foilGrad.addColorStop(0.32, '#d97706');
-  foilGrad.addColorStop(0.65, '#facc15');
-  foilGrad.addColorStop(1, '#92400e');
-
-  const busR = 27;
-  ctx.fillStyle = foilGrad;
+  // Rectangular black/gold spacecraft bus
+  const busGrad = ctx.createLinearGradient(-24, -26, 24, 26);
+  busGrad.addColorStop(0, '#0f172a');
+  busGrad.addColorStop(0.45, '#1e293b');
+  busGrad.addColorStop(0.68, '#d97706');
+  busGrad.addColorStop(1, '#facc15');
+  ctx.fillStyle = busGrad;
   ctx.strokeStyle = '#fef08a';
-  ctx.lineWidth = 1.4;
+  ctx.lineWidth = 1.5;
   ctx.beginPath();
-  for (let i = 0; i < 8; i++) {
-    const a = (i * Math.PI) / 4 + Math.PI / 8;
-    const px = Math.cos(a) * busR;
-    const py = Math.sin(a) * busR;
-    if (i === 0) ctx.moveTo(px, py);
-    else ctx.lineTo(px, py);
-  }
-  ctx.closePath();
+  ctx.roundRect(-24, -26, 48, 52, 4);
   ctx.fill();
   ctx.stroke();
 
-  // Crinkled foil facet lines
-  ctx.strokeStyle = 'rgba(120, 53, 15, 0.45)';
+  // Gold MLI lower foil blanket inset on black rectangular bus
+  const foilInsetGrad = ctx.createLinearGradient(-20, 2, 20, 22);
+  foilInsetGrad.addColorStop(0, '#fde047');
+  foilInsetGrad.addColorStop(0.55, '#ca8a04');
+  foilInsetGrad.addColorStop(1, '#92400e');
+  ctx.fillStyle = foilInsetGrad;
+  ctx.fillRect(-20, 4, 40, 18);
+  ctx.strokeStyle = 'rgba(120, 53, 15, 0.5)';
   ctx.lineWidth = 1;
   ctx.beginPath();
-  ctx.moveTo(-20, -10);
-  ctx.lineTo(18, 12);
-  ctx.moveTo(-14, 16);
-  ctx.lineTo(16, -15);
+  ctx.moveTo(-20, 10);
+  ctx.lineTo(20, 18);
+  ctx.moveTo(-14, 22);
+  ctx.lineTo(16, 4);
   ctx.stroke();
 
-  // Large white circular High-Gain Parabolic Dish Antenna in center
+  // Giant white circular 3-meter High-Gain Parabolic Dish Antenna on top
   ctx.save();
-  ctx.translate(0, -5);
-  const dishGrad = ctx.createRadialGradient(-7, -7, 3, 0, 0, 25);
+  ctx.translate(0, -10);
+  const dishGrad = ctx.createRadialGradient(-8, -8, 3, 0, 0, 29);
   dishGrad.addColorStop(0, '#ffffff');
   dishGrad.addColorStop(0.65, '#e2e8f0');
   dishGrad.addColorStop(1, '#94a3b8');
 
   ctx.fillStyle = dishGrad;
   ctx.strokeStyle = '#ffffff';
-  ctx.lineWidth = 1.5;
+  ctx.lineWidth = 1.6;
   ctx.beginPath();
-  ctx.arc(0, 0, 24, 0, Math.PI * 2);
+  ctx.arc(0, 0, 28, 0, Math.PI * 2);
   ctx.fill();
   ctx.stroke();
 
-  // Dish parabolic inner ring
+  // Dish parabolic inner contour ring
   ctx.strokeStyle = 'rgba(100, 116, 139, 0.45)';
   ctx.lineWidth = 1;
   ctx.beginPath();
-  ctx.arc(0, 0, 15, 0, Math.PI * 2);
+  ctx.arc(0, 0, 18, 0, Math.PI * 2);
   ctx.stroke();
 
   // Feed-horn tripod struts
@@ -389,7 +396,7 @@ function drawMroSpacecraft(ctx: CanvasRenderingContext2D, cx: number, cy: number
   for (let i = 0; i < 3; i++) {
     const a = (i * Math.PI * 2) / 3 - Math.PI / 2;
     ctx.beginPath();
-    ctx.moveTo(Math.cos(a) * 21, Math.sin(a) * 21);
+    ctx.moveTo(Math.cos(a) * 24, Math.sin(a) * 24);
     ctx.lineTo(0, 0);
     ctx.stroke();
   }
@@ -399,7 +406,7 @@ function drawMroSpacecraft(ctx: CanvasRenderingContext2D, cx: number, cy: number
   ctx.strokeStyle = '#1e293b';
   ctx.lineWidth = 1.2;
   ctx.beginPath();
-  ctx.arc(0, 0, 4.2, 0, Math.PI * 2);
+  ctx.arc(0, 0, 4.5, 0, Math.PI * 2);
   ctx.fill();
   ctx.stroke();
   ctx.restore();
@@ -410,39 +417,39 @@ function drawMroSpacecraft(ctx: CanvasRenderingContext2D, cx: number, cy: number
 function drawMavenSpacecraft(ctx: CanvasRenderingContext2D, cx: number, cy: number) {
   ctx.save();
   ctx.translate(cx, cy);
-  ctx.rotate(0.1);
+  ctx.rotate(0.08);
 
-  // Iconic MAVEN angled "gull-wing" solar arrays + wingtip magnetometer booms
+  // Iconic MAVEN gull-wing bent solar panels ending in long thin wingtip magnetometer booms
   for (const side of [-1, 1]) {
     ctx.save();
     ctx.scale(side, 1);
 
     // Swept inner wing segment
     ctx.save();
-    ctx.translate(22, -2);
-    ctx.rotate(-0.24);
-    drawSolarPanelGrid(ctx, 0, -15, 44, 30, 4, 3);
+    ctx.translate(21, -2);
+    ctx.rotate(-0.28);
+    drawSolarPanelGrid(ctx, 0, -14, 42, 28, 4, 3);
 
-    // Angled outer gull-wing tip panel
+    // Bent outer gull-wing tip panel
     ctx.save();
-    ctx.translate(44, 0);
-    ctx.rotate(0.42);
-    drawSolarPanelGrid(ctx, 0, -13, 36, 26, 3, 3);
+    ctx.translate(42, 0);
+    ctx.rotate(0.52);
+    drawSolarPanelGrid(ctx, 0, -12, 34, 24, 3, 3);
 
-    // Long magnetometer boom extending from outer wingtip
+    // Long thin magnetometer sensor boom extending from outer wingtip
     ctx.strokeStyle = '#e2e8f0';
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 1.6;
     ctx.beginPath();
-    ctx.moveTo(36, 0);
-    ctx.lineTo(62, 0);
+    ctx.moveTo(34, 0);
+    ctx.lineTo(66, 0);
     ctx.stroke();
 
     // Fluxgate magnetometer sensor head
     ctx.fillStyle = '#f8fafc';
     ctx.strokeStyle = '#38bdf8';
     ctx.lineWidth = 1.3;
-    ctx.fillRect(60, -4, 9, 8);
-    ctx.strokeRect(60, -4, 9, 8);
+    ctx.fillRect(64, -3.5, 8, 7);
+    ctx.strokeRect(64, -3.5, 8, 7);
     ctx.restore();
 
     ctx.restore();
@@ -474,16 +481,16 @@ function drawMavenSpacecraft(ctx: CanvasRenderingContext2D, cx: number, cy: numb
   ctx.arc(6, 51, 2.5, 0, Math.PI * 2);
   ctx.fill();
 
-  // Metallic octagonal/cube MAVEN spacecraft core with gold foil lower accents
-  const bodyGrad = ctx.createLinearGradient(-22, -20, 22, 20);
-  bodyGrad.addColorStop(0, '#e2e8f0');
+  // Cubic metallic MAVEN spacecraft bus with gold foil accents
+  const bodyGrad = ctx.createLinearGradient(-21, -21, 21, 21);
+  bodyGrad.addColorStop(0, '#f1f5f9');
   bodyGrad.addColorStop(0.5, '#94a3b8');
   bodyGrad.addColorStop(1, '#475569');
   ctx.fillStyle = bodyGrad;
   ctx.strokeStyle = '#f8fafc';
   ctx.lineWidth = 1.5;
   ctx.beginPath();
-  ctx.roundRect(-21, -20, 42, 40, 6);
+  ctx.roundRect(-21, -21, 42, 42, 3);
   ctx.fill();
   ctx.stroke();
 
@@ -528,7 +535,153 @@ function drawSpacecraftById(ctx: CanvasRenderingContext2D, cx: number, cy: numbe
   else if (id === 'mars-express') drawMarsExpressSpacecraft(ctx, cx, cy);
   else if (id === 'tgo') drawTgoSpacecraft(ctx, cx, cy);
   else if (id === 'hope') drawHopeSpacecraft(ctx, cx, cy);
+  else if (id === 'mgs') drawMgsSpacecraft(ctx, cx, cy);
+  else if (id === 'viking-1-orbiter') drawVikingOrbiterSpacecraft(ctx, cx, cy);
+  else if (id === 'mangalyaan') drawMangalyaanSpacecraft(ctx, cx, cy);
+  else if (id === 'tianwen-1') drawTgoSpacecraft(ctx, cx, cy);
   else drawMavenSpacecraft(ctx, cx, cy);
+}
+
+function drawMgsSpacecraft(ctx: CanvasRenderingContext2D, cx: number, cy: number) {
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(-0.15);
+
+  // Twin MGS swept solar wings + magnetometer wingtips
+  drawSolarPanelGrid(ctx, -118, -16, 88, 32, 6, 3);
+  drawSolarPanelGrid(ctx, 30, -16, 88, 32, 6, 3);
+
+  ctx.strokeStyle = '#cbd5e1';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(-118, 0);
+  ctx.lineTo(-124, 0);
+  ctx.moveTo(118, 0);
+  ctx.lineTo(124, 0);
+  ctx.stroke();
+
+  // Rectangular gold-foil bus + protruding HGA dish
+  const busGrad = ctx.createLinearGradient(-22, -26, 22, 26);
+  busGrad.addColorStop(0, '#fde047');
+  busGrad.addColorStop(0.5, '#b45309');
+  busGrad.addColorStop(1, '#334155');
+  ctx.fillStyle = busGrad;
+  ctx.strokeStyle = '#fef08a';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.roundRect(-24, -24, 48, 48, 4);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.fillStyle = '#f8fafc';
+  ctx.strokeStyle = '#64748b';
+  ctx.lineWidth = 1.3;
+  ctx.beginPath();
+  ctx.arc(0, -34, 16, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+
+  // MOLA laser altimeter nadir aperture
+  ctx.fillStyle = '#06b6d4';
+  ctx.beginPath();
+  ctx.arc(0, 6, 6, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawVikingOrbiterSpacecraft(ctx: CanvasRenderingContext2D, cx: number, cy: number) {
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(0.2);
+
+  // Iconic 4 cruciform solar array paddles
+  drawSolarPanelGrid(ctx, -116, -12, 74, 24, 5, 2);
+  drawSolarPanelGrid(ctx, 42, -12, 74, 24, 5, 2);
+  drawSolarPanelGrid(ctx, -12, -116, 24, 74, 2, 5);
+  drawSolarPanelGrid(ctx, -12, 42, 24, 74, 2, 5);
+
+  // Octagonal gold bus + large white dish
+  ctx.fillStyle = '#eab308';
+  ctx.strokeStyle = '#fef08a';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  for (let i = 0; i < 8; i++) {
+    const a = (i * Math.PI) / 4;
+    const px = Math.cos(a) * 32;
+    const py = Math.sin(a) * 32;
+    if (i === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  }
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.fillStyle = '#ffffff';
+  ctx.strokeStyle = '#475569';
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  ctx.arc(-8, -8, 17, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawMangalyaanSpacecraft(ctx: CanvasRenderingContext2D, cx: number, cy: number) {
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(-0.14);
+
+  // Multi-panel 3-segment solar wing array on yoke
+  ctx.strokeStyle = '#cbd5e1';
+  ctx.lineWidth = 2.2;
+  ctx.beginPath();
+  ctx.moveTo(22, 0);
+  ctx.lineTo(32, 0);
+  ctx.stroke();
+  drawSolarPanelGrid(ctx, 32, -19, 28, 38, 2, 3);
+  drawSolarPanelGrid(ctx, 62, -19, 28, 38, 2, 3);
+  drawSolarPanelGrid(ctx, 92, -19, 28, 38, 2, 3);
+
+  // Gold-foil cubical spacecraft bus
+  const foilGrad = ctx.createLinearGradient(-22, -22, 22, 22);
+  foilGrad.addColorStop(0, '#fef08a');
+  foilGrad.addColorStop(0.45, '#eab308');
+  foilGrad.addColorStop(1, '#92400e');
+  ctx.fillStyle = foilGrad;
+  ctx.strokeStyle = '#fef9c3';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.roundRect(-23, -23, 46, 46, 3);
+  ctx.fill();
+  ctx.stroke();
+
+  // Prominent parabolic dish antenna + feed tripod
+  const dishGrad = ctx.createRadialGradient(-34, -8, 2, -28, -4, 21);
+  dishGrad.addColorStop(0, '#ffffff');
+  dishGrad.addColorStop(0.75, '#e2e8f0');
+  dishGrad.addColorStop(1, '#94a3b8');
+  ctx.fillStyle = dishGrad;
+  ctx.strokeStyle = '#f97316';
+  ctx.lineWidth = 1.7;
+  ctx.beginPath();
+  ctx.arc(-28, -4, 20, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.strokeStyle = '#334155';
+  ctx.lineWidth = 1.2;
+  for (let i = 0; i < 3; i++) {
+    const a = (i * Math.PI * 2) / 3;
+    ctx.beginPath();
+    ctx.moveTo(-28 + Math.cos(a) * 18, -4 + Math.sin(a) * 18);
+    ctx.lineTo(-28, -4);
+    ctx.stroke();
+  }
+  ctx.fillStyle = '#0f172a';
+  ctx.beginPath();
+  ctx.arc(-28, -4, 3, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
 }
 
 function drawOdysseySpacecraft(ctx: CanvasRenderingContext2D, cx: number, cy: number) {
@@ -634,43 +787,59 @@ function drawMarsExpressSpacecraft(ctx: CanvasRenderingContext2D, cx: number, cy
 function drawTgoSpacecraft(ctx: CanvasRenderingContext2D, cx: number, cy: number) {
   ctx.save();
   ctx.translate(cx, cy);
-  ctx.rotate(-0.18);
+  ctx.rotate(-0.14);
 
-  // Long articulated solar arrays
-  drawSolarPanelGrid(ctx, -118, -16, 90, 32, 7, 3);
-  drawSolarPanelGrid(ctx, 28, -16, 90, 32, 7, 3);
+  // Two long rectangular solar wings on articulated yokes
+  ctx.strokeStyle = '#cbd5e1';
+  ctx.lineWidth = 2.2;
+  ctx.beginPath();
+  ctx.moveTo(-22, 0);
+  ctx.lineTo(-30, 0);
+  ctx.moveTo(22, 0);
+  ctx.lineTo(30, 0);
+  ctx.stroke();
 
-  // Hexagonal metallic/gold Trace Gas Orbiter bus
-  const bodyGrad = ctx.createLinearGradient(-24, -20, 24, 20);
-  bodyGrad.addColorStop(0, '#e2e8f0');
-  bodyGrad.addColorStop(0.6, '#64748b');
-  bodyGrad.addColorStop(1, '#ca8a04');
+  drawSolarPanelGrid(ctx, -120, -16, 90, 32, 7, 3);
+  drawSolarPanelGrid(ctx, 30, -16, 90, 32, 7, 3);
+
+  // Compact cubic ESA Trace Gas Orbiter bus
+  const bodyGrad = ctx.createLinearGradient(-22, -22, 22, 22);
+  bodyGrad.addColorStop(0, '#f1f5f9');
+  bodyGrad.addColorStop(0.55, '#94a3b8');
+  bodyGrad.addColorStop(1, '#eab308');
   ctx.fillStyle = bodyGrad;
-  ctx.strokeStyle = '#f8fafc';
+  ctx.strokeStyle = '#ffffff';
   ctx.lineWidth = 1.5;
   ctx.beginPath();
-  for (let i = 0; i < 6; i++) {
-    const a = (i * Math.PI) / 3;
-    const px = Math.cos(a) * 26;
-    const py = Math.sin(a) * 24;
-    if (i === 0) ctx.moveTo(px, py);
-    else ctx.lineTo(px, py);
-  }
-  ctx.closePath();
+  ctx.roundRect(-22, -22, 44, 44, 3);
   ctx.fill();
   ctx.stroke();
 
-  // Large white HGA dish + NOMAD spectrometer optics
-  ctx.fillStyle = '#f8fafc';
-  ctx.strokeStyle = '#94a3b8';
-  ctx.lineWidth = 1.4;
+  // Central circular High-Gain Dish Antenna
+  const dishGrad = ctx.createRadialGradient(-5, -5, 2, 0, 0, 18);
+  dishGrad.addColorStop(0, '#ffffff');
+  dishGrad.addColorStop(0.75, '#e2e8f0');
+  dishGrad.addColorStop(1, '#94a3b8');
+  ctx.fillStyle = dishGrad;
+  ctx.strokeStyle = '#64748b';
+  ctx.lineWidth = 1.3;
   ctx.beginPath();
-  ctx.arc(-6, -4, 15, 0, Math.PI * 2);
+  ctx.arc(0, 0, 17, 0, Math.PI * 2);
   ctx.fill();
   ctx.stroke();
-  ctx.fillStyle = '#22d3ee';
+
+  ctx.strokeStyle = '#334155';
+  ctx.lineWidth = 1.2;
+  for (let i = 0; i < 3; i++) {
+    const a = (i * Math.PI * 2) / 3 - Math.PI / 2;
+    ctx.beginPath();
+    ctx.moveTo(Math.cos(a) * 15, Math.sin(a) * 15);
+    ctx.lineTo(0, 0);
+    ctx.stroke();
+  }
+  ctx.fillStyle = '#0f172a';
   ctx.beginPath();
-  ctx.arc(12, 10, 4, 0, Math.PI * 2);
+  ctx.arc(0, 0, 3, 0, Math.PI * 2);
   ctx.fill();
 
   ctx.restore();
@@ -679,44 +848,62 @@ function drawTgoSpacecraft(ctx: CanvasRenderingContext2D, cx: number, cy: number
 function drawHopeSpacecraft(ctx: CanvasRenderingContext2D, cx: number, cy: number) {
   ctx.save();
   ctx.translate(cx, cy);
-  ctx.rotate(0.14);
+  ctx.rotate(0.12);
 
-  // Iconic UAESA Hope 3-panel radial solar array configuration
-  for (const angle of [0, (Math.PI * 2) / 3, (Math.PI * 4) / 3]) {
-    ctx.save();
-    ctx.rotate(angle);
-    drawSolarPanelGrid(ctx, 22, -14, 72, 28, 5, 3);
-    ctx.restore();
-  }
+  // Twin symmetrical multi-panel solar wing arrays
+  ctx.strokeStyle = '#cbd5e1';
+  ctx.lineWidth = 2.2;
+  ctx.beginPath();
+  ctx.moveTo(-23, 0);
+  ctx.lineTo(-32, 0);
+  ctx.moveTo(23, 0);
+  ctx.lineTo(32, 0);
+  ctx.stroke();
 
-  // Hexagonal gold-honeycomb spacecraft bus
-  const busGrad = ctx.createLinearGradient(-22, -22, 22, 22);
+  drawSolarPanelGrid(ctx, -116, -18, 40, 36, 3, 3);
+  drawSolarPanelGrid(ctx, -74, -18, 42, 36, 3, 3);
+  drawSolarPanelGrid(ctx, 32, -18, 42, 36, 3, 3);
+  drawSolarPanelGrid(ctx, 76, -18, 40, 36, 3, 3);
+
+  // Gold-foil cubic spacecraft bus
+  const busGrad = ctx.createLinearGradient(-23, -23, 23, 23);
   busGrad.addColorStop(0, '#fef08a');
   busGrad.addColorStop(0.5, '#eab308');
   busGrad.addColorStop(1, '#92400e');
   ctx.fillStyle = busGrad;
-  ctx.strokeStyle = '#ffffff';
+  ctx.strokeStyle = '#fef9c3';
   ctx.lineWidth = 1.5;
   ctx.beginPath();
-  for (let i = 0; i < 6; i++) {
-    const a = (i * Math.PI) / 3 + Math.PI / 6;
-    const px = Math.cos(a) * 24;
-    const py = Math.sin(a) * 24;
-    if (i === 0) ctx.moveTo(px, py);
-    else ctx.lineTo(px, py);
-  }
-  ctx.closePath();
+  ctx.roundRect(-23, -23, 46, 46, 3);
   ctx.fill();
   ctx.stroke();
 
-  // White central HGA dish
-  ctx.fillStyle = '#ffffff';
-  ctx.strokeStyle = '#64748b';
-  ctx.lineWidth = 1.3;
+  // Prominent white parabolic High-Gain Dish Antenna
+  const dishGrad = ctx.createRadialGradient(-6, -6, 2, 0, 0, 21);
+  dishGrad.addColorStop(0, '#ffffff');
+  dishGrad.addColorStop(0.75, '#e2e8f0');
+  dishGrad.addColorStop(1, '#94a3b8');
+  ctx.fillStyle = dishGrad;
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 1.5;
   ctx.beginPath();
-  ctx.arc(0, 0, 14, 0, Math.PI * 2);
+  ctx.arc(0, 0, 20, 0, Math.PI * 2);
   ctx.fill();
   ctx.stroke();
+
+  ctx.strokeStyle = '#334155';
+  ctx.lineWidth = 1.3;
+  for (let i = 0; i < 3; i++) {
+    const a = (i * Math.PI * 2) / 3 - Math.PI / 6;
+    ctx.beginPath();
+    ctx.moveTo(Math.cos(a) * 18, Math.sin(a) * 18);
+    ctx.lineTo(0, 0);
+    ctx.stroke();
+  }
+  ctx.fillStyle = '#0f172a';
+  ctx.beginPath();
+  ctx.arc(0, 0, 3.2, 0, Math.PI * 2);
+  ctx.fill();
 
   ctx.restore();
 }
@@ -764,11 +951,204 @@ function drawSurfaceCraftById(ctx: CanvasRenderingContext2D, cx: number, cy: num
     drawMerRover(ctx, cx, cy);
   } else if (id === 'insight' || id === 'phoenix') {
     drawFanSolarLander(ctx, cx, cy, id === 'insight');
-  } else if (id === 'viking-1') {
+  } else if (id === 'viking-1' || id === 'viking-2') {
     drawVikingLander(ctx, cx, cy);
+  } else if (id === 'beagle-2') {
+    drawBeagle2Lander(ctx, cx, cy);
+  } else if (id === 'mars-3') {
+    drawMars3Lander(ctx, cx, cy);
+  } else if (id === 'schiaparelli') {
+    drawSchiaparelliProbe(ctx, cx, cy);
+  } else if (id === 'pathfinder') {
+    drawPathfinderAndSojourner(ctx, cx, cy);
   } else {
     drawNasaMarsRover(ctx, cx, cy, id === 'curiosity' ? 'curiosity' : 'perseverance');
   }
+}
+
+function drawBeagle2Lander(ctx: CanvasRenderingContext2D, cx: number, cy: number) {
+  ctx.save();
+  ctx.translate(cx, cy);
+
+  // Iconic "pocket-watch" deployed circular solar petals (3 deployed, 1 semi-open)
+  const petalAngles = [-Math.PI / 2, -0.15, Math.PI * 0.45, Math.PI * 0.98];
+  for (let i = 0; i < petalAngles.length; i++) {
+    ctx.save();
+    ctx.rotate(petalAngles[i]);
+    ctx.fillStyle = '#1e3a8a';
+    ctx.strokeStyle = '#cbd5e1';
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.arc(36, 0, i === 3 ? 16 : 22, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // Central gold-rimmed clam shell base
+  ctx.fillStyle = '#eab308';
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  ctx.arc(0, 0, 22, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawMars3Lander(ctx: CanvasRenderingContext2D, cx: number, cy: number) {
+  ctx.save();
+  ctx.translate(cx, cy);
+
+  // 4 opened triangular Soviet landing petals
+  ctx.fillStyle = '#cbd5e1';
+  ctx.strokeStyle = '#f8fafc';
+  ctx.lineWidth = 1.5;
+  for (let i = 0; i < 4; i++) {
+    ctx.save();
+    ctx.rotate((i * Math.PI) / 2 + Math.PI / 4);
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(-18, 52);
+    ctx.lineTo(18, 52);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // Central spherical dome & whip antennas
+  ctx.fillStyle = '#e2e8f0';
+  ctx.strokeStyle = '#f97316';
+  ctx.lineWidth = 1.8;
+  ctx.beginPath();
+  ctx.arc(0, 0, 22, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawSchiaparelliProbe(ctx: CanvasRenderingContext2D, cx: number, cy: number) {
+  ctx.save();
+  ctx.translate(cx, cy);
+
+  const discGrad = ctx.createRadialGradient(-8, -8, 6, 0, 0, 44);
+  discGrad.addColorStop(0, '#f8fafc');
+  discGrad.addColorStop(0.7, '#94a3b8');
+  discGrad.addColorStop(1, '#334155');
+  ctx.fillStyle = discGrad;
+  ctx.strokeStyle = '#f97316';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(0, 0, 42, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.fillStyle = '#eab308';
+  ctx.beginPath();
+  ctx.arc(0, 0, 18, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawPathfinderAndSojourner(ctx: CanvasRenderingContext2D, cx: number, cy: number) {
+  ctx.save();
+  ctx.translate(cx, cy);
+
+  // Opened 3-petal tetrahedral Pathfinder base with blue solar cells
+  ctx.save();
+  ctx.translate(-22, -10);
+  for (let i = 0; i < 3; i++) {
+    ctx.save();
+    ctx.rotate((i * Math.PI * 2) / 3 - Math.PI / 2);
+    ctx.fillStyle = '#0c2a63';
+    ctx.strokeStyle = '#cbd5e1';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(0, -14);
+    ctx.lineTo(26, -52);
+    ctx.lineTo(-26, -52);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // Central Pathfinder lander electronics core + dish mast
+  ctx.fillStyle = '#e2e8f0';
+  ctx.strokeStyle = '#f59e0b';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.arc(0, 0, 16, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath();
+  ctx.arc(-4, -3, 6, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  // Distinct 6-wheeled rectangular flat-top solar panel Sojourner rover + front APXS spectrometer
+  ctx.save();
+  ctx.translate(46, 36);
+  ctx.rotate(0.4);
+
+  // Rocker-bogie struts & 6 wheels
+  ctx.strokeStyle = '#cbd5e1';
+  ctx.lineWidth = 1.8;
+  for (const side of [-1, 1]) {
+    ctx.beginPath();
+    ctx.moveTo(side * 12, -20);
+    ctx.lineTo(side * 22, -20);
+    ctx.moveTo(side * 12, 0);
+    ctx.lineTo(side * 22, 0);
+    ctx.moveTo(side * 12, 20);
+    ctx.lineTo(side * 22, 20);
+    ctx.stroke();
+
+    for (const wy of [-20, 0, 20]) {
+      ctx.fillStyle = '#0f172a';
+      ctx.strokeStyle = '#94a3b8';
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.roundRect(side * 22 - 4, wy - 6, 8, 12, 2);
+      ctx.fill();
+      ctx.stroke();
+    }
+  }
+
+  // Gold foil warm electronics box under solar panel
+  ctx.fillStyle = '#d97706';
+  ctx.fillRect(-13, -18, 26, 36);
+
+  // Flat-top rectangular gridded blue solar panel deck
+  drawSolarPanelGrid(ctx, -16, -22, 32, 44, 4, 5);
+
+  // Front Alpha Proton X-Ray Spectrometer (APXS) sensor head
+  ctx.strokeStyle = '#e2e8f0';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(0, -22);
+  ctx.lineTo(0, -32);
+  ctx.stroke();
+  ctx.fillStyle = '#f97316';
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 1.1;
+  ctx.beginPath();
+  ctx.arc(0, -34, 4.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+
+  // Whip antenna aft
+  ctx.strokeStyle = '#f8fafc';
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.moveTo(-10, 18);
+  ctx.lineTo(-14, 34);
+  ctx.stroke();
+  ctx.restore();
+
+  ctx.restore();
 }
 
 function drawNasaMarsRover(
@@ -781,29 +1161,29 @@ function drawNasaMarsRover(
   ctx.translate(cx, cy);
   ctx.rotate(-0.22); // Crisp 3/4 top-down rover orientation
 
-  // 6 Rocker-bogie suspension struts
+  // Prominent 6-wheel rocker-bogie suspension struts
   ctx.strokeStyle = '#cbd5e1';
-  ctx.lineWidth = 3.2;
+  ctx.lineWidth = 3.4;
   for (const side of [-1, 1]) {
     ctx.beginPath();
     ctx.moveTo(side * 24, -44);
-    ctx.lineTo(side * 46, -54);
+    ctx.lineTo(side * 48, -56);
     ctx.moveTo(side * 24, 0);
-    ctx.lineTo(side * 48, 0);
+    ctx.lineTo(side * 50, 0);
     ctx.moveTo(side * 24, 40);
-    ctx.lineTo(side * 46, 52);
-    ctx.moveTo(side * 46, -54);
-    ctx.lineTo(side * 48, 0);
-    ctx.lineTo(side * 46, 52);
+    ctx.lineTo(side * 48, 54);
+    ctx.moveTo(side * 48, -56);
+    ctx.lineTo(side * 50, 0);
+    ctx.lineTo(side * 48, 54);
     ctx.stroke();
   }
 
-  // 6 Aluminum/titanium cleated wheels
+  // 6 Black/metallic cleated wheels
   for (const side of [-1, 1]) {
-    for (const wy of [-54, 0, 52]) {
+    for (const wy of [-56, 0, 54]) {
       ctx.save();
-      ctx.translate(side * 50, wy);
-      ctx.fillStyle = variant === 'perseverance' ? '#0f172a' : '#1e293b';
+      ctx.translate(side * 52, wy);
+      ctx.fillStyle = '#090d16';
       ctx.strokeStyle = '#94a3b8';
       ctx.lineWidth = 1.6;
       ctx.beginPath();
@@ -811,7 +1191,7 @@ function drawNasaMarsRover(
       ctx.fill();
       ctx.stroke();
 
-      // Wheel cleats
+      // Wheel tread cleats
       ctx.strokeStyle = 'rgba(226, 232, 240, 0.55)';
       ctx.lineWidth = 1.1;
       for (let ty = -10; ty <= 10; ty += 5) {
@@ -824,24 +1204,25 @@ function drawNasaMarsRover(
     }
   }
 
-  // Aft finned MMRTG nuclear power battery
+  // Distinctive rear-angled white/gold MMRTG nuclear power finned cylinder
   ctx.save();
-  ctx.translate(0, 56);
-  ctx.rotate(0.12);
-  const rtgGrad = ctx.createLinearGradient(-14, 0, 14, 24);
-  rtgGrad.addColorStop(0, '#475569');
-  rtgGrad.addColorStop(1, '#0f172a');
+  ctx.translate(0, 54);
+  ctx.rotate(0.28);
+  const rtgGrad = ctx.createLinearGradient(-14, -4, 14, 30);
+  rtgGrad.addColorStop(0, '#f8fafc');
+  rtgGrad.addColorStop(0.55, '#cbd5e1');
+  rtgGrad.addColorStop(1, '#d97706');
   ctx.fillStyle = rtgGrad;
-  ctx.strokeStyle = '#cbd5e1';
-  ctx.lineWidth = 1.3;
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 1.4;
   ctx.beginPath();
-  ctx.roundRect(-13, -6, 26, 28, 4);
+  ctx.roundRect(-12, -4, 24, 32, 5);
   ctx.fill();
   ctx.stroke();
-  // Cooling fins
+  // Gold MMRTG radial cooling fins
   ctx.strokeStyle = '#f59e0b';
-  ctx.lineWidth = 1.2;
-  for (let fy = 0; fy <= 18; fy += 6) {
+  ctx.lineWidth = 1.6;
+  for (let fy = 3; fy <= 24; fy += 5) {
     ctx.beginPath();
     ctx.moveTo(-16, fy);
     ctx.lineTo(16, fy);
@@ -849,64 +1230,80 @@ function drawNasaMarsRover(
   }
   ctx.restore();
 
-  // Main Rover Warm Electronics Box (WEB) Chassis Deck
-  const deckGrad = ctx.createLinearGradient(-30, -48, 30, 48);
-  if (variant === 'perseverance') {
-    deckGrad.addColorStop(0, '#f8fafc');
-    deckGrad.addColorStop(0.55, '#e2e8f0');
-    deckGrad.addColorStop(1, '#94a3b8');
-  } else {
-    deckGrad.addColorStop(0, '#fef3c7');
-    deckGrad.addColorStop(0.45, '#e2e8f0');
-    deckGrad.addColorStop(1, '#b45309');
-  }
+  // White rectangular chassis deck (WEB)
+  const deckGrad = ctx.createLinearGradient(-29, -46, 29, 46);
+  deckGrad.addColorStop(0, '#ffffff');
+  deckGrad.addColorStop(0.55, '#e2e8f0');
+  deckGrad.addColorStop(1, '#cbd5e1');
   ctx.fillStyle = deckGrad;
   ctx.strokeStyle = '#ffffff';
-  ctx.lineWidth = 1.6;
+  ctx.lineWidth = 1.7;
   ctx.beginPath();
-  ctx.roundRect(-29, -46, 58, 92, 8);
+  ctx.roundRect(-29, -46, 58, 92, 5);
   ctx.fill();
   ctx.stroke();
 
-  // Gold foil thermal radiator strip & UHF high-gain saucer antenna
-  ctx.fillStyle = '#eab308';
-  ctx.fillRect(-23, 18, 46, 16);
-  ctx.fillStyle = '#cbd5e1';
+  // Subtle gold foil radiator strip & UHF/HGA saucer antenna on aft deck
+  ctx.fillStyle = variant === 'perseverance' ? '#eab308' : '#d97706';
+  ctx.fillRect(-23, 20, 46, 15);
+  ctx.fillStyle = '#f1f5f9';
   ctx.strokeStyle = '#475569';
   ctx.lineWidth = 1.2;
   ctx.beginPath();
-  ctx.ellipse(-14, 26, 11, 8, 0, 0, Math.PI * 2);
+  ctx.ellipse(-13, 27, 11, 8, 0, 0, Math.PI * 2);
   ctx.fill();
   ctx.stroke();
 
-  // Articulated Robotic Arm + SHERLOC / APXS Science Turret forward
+  // Folded 5-joint robotic turret arm on the front
   ctx.strokeStyle = '#e2e8f0';
-  ctx.lineWidth = 3.5;
+  ctx.lineWidth = 3.2;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
   ctx.beginPath();
-  ctx.moveTo(8, -46);
-  ctx.lineTo(20, -76);
-  ctx.lineTo(-4, -92);
+  ctx.moveTo(-8, -46); // Joint 1: turret shoulder mount
+  ctx.lineTo(-22, -62); // Joint 2: upper arm
+  ctx.lineTo(-4, -74); // Joint 3: elbow fold
+  ctx.lineTo(14, -70); // Joint 4: forearm fold
+  ctx.lineTo(4, -88); // Joint 5: wrist to turret
   ctx.stroke();
 
+  // Joint pivot dots
+  ctx.fillStyle = '#64748b';
+  for (const [jx, jy] of [
+    [-8, -46],
+    [-22, -62],
+    [-4, -74],
+    [14, -70],
+  ]) {
+    ctx.beginPath();
+    ctx.arc(jx, jy, 2.4, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Front SHERLOC / APXS rotary science turret
   ctx.fillStyle = '#f97316';
   ctx.strokeStyle = '#ffffff';
-  ctx.lineWidth = 1.4;
+  ctx.lineWidth = 1.5;
   ctx.beginPath();
-  ctx.arc(-6, -93, 9, 0, Math.PI * 2);
+  ctx.arc(3, -90, 9.5, 0, Math.PI * 2);
   ctx.fill();
   ctx.stroke();
+  ctx.fillStyle = '#0f172a';
+  ctx.beginPath();
+  ctx.arc(3, -90, 3.2, 0, Math.PI * 2);
+  ctx.fill();
 
-  // MastCam / SuperCam / ChemCam Remote Sensing Mast Head
-  ctx.strokeStyle = '#94a3b8';
+  // Front-right white Remote Sensing Mast (SuperCam / ChemCam cyclops head)
+  ctx.strokeStyle = '#f8fafc';
   ctx.lineWidth = 5;
   ctx.beginPath();
-  ctx.moveTo(-12, -24);
-  ctx.lineTo(-14, -44);
+  ctx.moveTo(15, -24);
+  ctx.lineTo(16, -44);
   ctx.stroke();
 
   ctx.save();
-  ctx.translate(-14, -48);
-  ctx.fillStyle = '#f8fafc';
+  ctx.translate(16, -48);
+  ctx.fillStyle = '#ffffff';
   ctx.strokeStyle = '#334155';
   ctx.lineWidth = 1.4;
   ctx.beginPath();
@@ -914,10 +1311,10 @@ function drawNasaMarsRover(
   ctx.fill();
   ctx.stroke();
 
-  // Primary laser/spectrometer lens + stereo navcams
+  // Primary SuperCam / ChemCam cyclops optical lens + stereo Mastcams
   ctx.fillStyle = variant === 'perseverance' ? '#06b6d4' : '#ef4444';
   ctx.beginPath();
-  ctx.arc(0, 0, 5.2, 0, Math.PI * 2);
+  ctx.arc(0, 0, 5.4, 0, Math.PI * 2);
   ctx.fill();
   ctx.fillStyle = '#0f172a';
   ctx.beginPath();
@@ -934,20 +1331,20 @@ function drawZhurongRover(ctx: CanvasRenderingContext2D, cx: number, cy: number)
   ctx.translate(cx, cy);
   ctx.rotate(0.18);
 
-  // 6 Wheels
+  // 6 Active suspension wheels
   for (const side of [-1, 1]) {
-    for (const wy of [-36, 0, 36]) {
-      ctx.fillStyle = '#1e293b';
+    for (const wy of [-38, 0, 38]) {
+      ctx.fillStyle = '#0f172a';
       ctx.strokeStyle = '#94a3b8';
-      ctx.lineWidth = 1.4;
+      ctx.lineWidth = 1.5;
       ctx.beginPath();
-      ctx.roundRect(side * 34 - 8, wy - 12, 16, 24, 3);
+      ctx.roundRect(side * 38 - 8, wy - 12, 16, 24, 3);
       ctx.fill();
       ctx.stroke();
     }
   }
 
-  // Iconic 4 butterfly-wing blue solar panels
+  // Iconic 4-panel blue butterfly/wing solar arrays
   const drawWing = (x: number, y: number, w: number, h: number, tilt: number) => {
     ctx.save();
     ctx.translate(x, y);
@@ -955,36 +1352,48 @@ function drawZhurongRover(ctx: CanvasRenderingContext2D, cx: number, cy: number)
     drawSolarPanelGrid(ctx, -w / 2, -h / 2, w, h, 4, 3);
     ctx.restore();
   };
-  drawWing(-52, -16, 52, 34, -0.2);
-  drawWing(52, -16, 52, 34, 0.2);
-  drawWing(-48, 28, 46, 28, 0.35);
-  drawWing(48, 28, 46, 28, -0.35);
+  drawWing(-56, -14, 54, 34, -0.18);
+  drawWing(56, -14, 54, 34, 0.18);
+  drawWing(-50, 30, 48, 28, 0.36);
+  drawWing(50, 30, 48, 28, -0.36);
 
-  // Central gold-foil/titanium deck
-  const deckGrad = ctx.createLinearGradient(-22, -32, 22, 32);
-  deckGrad.addColorStop(0, '#fde047');
-  deckGrad.addColorStop(0.5, '#cbd5e1');
-  deckGrad.addColorStop(1, '#d97706');
+  // Gold-foil hexagonal central deck
+  const hexPts: Array<[number, number]> = [
+    [0, -38],
+    [28, -18],
+    [28, 20],
+    [0, 38],
+    [-28, 20],
+    [-28, -18],
+  ];
+  const deckGrad = ctx.createLinearGradient(-28, -38, 28, 38);
+  deckGrad.addColorStop(0, '#fef08a');
+  deckGrad.addColorStop(0.5, '#eab308');
+  deckGrad.addColorStop(1, '#b45309');
   ctx.fillStyle = deckGrad;
-  ctx.strokeStyle = '#ffffff';
-  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = '#fef9c3';
+  ctx.lineWidth = 1.6;
   ctx.beginPath();
-  ctx.roundRect(-24, -34, 48, 68, 8);
+  hexPts.forEach(([px, py], i) => {
+    if (i === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  });
+  ctx.closePath();
   ctx.fill();
   ctx.stroke();
 
-  // Twin-eye stereo navigation mast
+  // Dual-mast cameras on white navigation mast head
   ctx.fillStyle = '#f8fafc';
   ctx.strokeStyle = '#334155';
   ctx.lineWidth = 1.4;
   ctx.beginPath();
-  ctx.roundRect(-14, -46, 28, 15, 4);
+  ctx.roundRect(-15, -48, 30, 15, 4);
   ctx.fill();
   ctx.stroke();
   ctx.fillStyle = '#38bdf8';
   ctx.beginPath();
-  ctx.arc(-6, -39, 3.2, 0, Math.PI * 2);
-  ctx.arc(6, -39, 3.2, 0, Math.PI * 2);
+  ctx.arc(-7, -41, 3.4, 0, Math.PI * 2);
+  ctx.arc(7, -41, 3.4, 0, Math.PI * 2);
   ctx.fill();
 
   ctx.restore();
@@ -997,53 +1406,63 @@ function drawMerRover(ctx: CanvasRenderingContext2D, cx: number, cy: number) {
 
   // 6 Rocker-bogie wheels
   for (const side of [-1, 1]) {
-    for (const wy of [-40, 0, 40]) {
-      ctx.fillStyle = '#0f172a';
+    for (const wy of [-42, 0, 42]) {
+      ctx.fillStyle = '#090d16';
       ctx.strokeStyle = '#94a3b8';
-      ctx.lineWidth = 1.4;
+      ctx.lineWidth = 1.5;
       ctx.beginPath();
-      ctx.roundRect(side * 40 - 8, wy - 12, 16, 24, 3);
+      ctx.roundRect(side * 42 - 8, wy - 12, 16, 24, 3);
       ctx.fill();
       ctx.stroke();
     }
   }
 
-  // Iconic MER triangular batwing dark-blue solar array deck
+  // Iconic MER triangular/hexagonal solar-panel deck ("petals")
   ctx.save();
   ctx.fillStyle = '#0c2a63';
   ctx.strokeStyle = '#cbd5e1';
   ctx.lineWidth = 1.6;
   ctx.beginPath();
-  ctx.moveTo(0, -48);
-  ctx.lineTo(54, -8);
-  ctx.lineTo(44, 40);
-  ctx.lineTo(-44, 40);
-  ctx.lineTo(-54, -8);
+  ctx.moveTo(0, -50);
+  ctx.lineTo(56, -12);
+  ctx.lineTo(50, 26);
+  ctx.lineTo(22, 44);
+  ctx.lineTo(-22, 44);
+  ctx.lineTo(-50, 26);
+  ctx.lineTo(-56, -12);
   ctx.closePath();
   ctx.fill();
   ctx.stroke();
 
-  // Solar grid overlay lines
+  // Solar cell grid & wing petal fold lines
   ctx.strokeStyle = 'rgba(147, 197, 253, 0.35)';
   ctx.lineWidth = 0.9;
   for (let x = -36; x <= 36; x += 12) {
     ctx.beginPath();
     ctx.moveTo(x, -30);
-    ctx.lineTo(x, 38);
+    ctx.lineTo(x, 40);
     ctx.stroke();
   }
   for (let y = -20; y <= 28; y += 12) {
     ctx.beginPath();
-    ctx.moveTo(-44, y);
-    ctx.lineTo(44, y);
+    ctx.moveTo(-46, y);
+    ctx.lineTo(46, y);
     ctx.stroke();
   }
+  ctx.strokeStyle = '#e2e8f0';
+  ctx.lineWidth = 1.1;
+  ctx.beginPath();
+  ctx.moveTo(-18, -22);
+  ctx.lineTo(-34, 34);
+  ctx.moveTo(18, -22);
+  ctx.lineTo(34, 34);
+  ctx.stroke();
   ctx.restore();
 
   // Gold central Warm Electronics Box + white Pancam masthead
   ctx.fillStyle = '#eab308';
   ctx.strokeStyle = '#fef08a';
-  ctx.lineWidth = 1.2;
+  ctx.lineWidth = 1.3;
   ctx.beginPath();
   ctx.roundRect(-16, -20, 32, 34, 4);
   ctx.fill();
@@ -1053,9 +1472,14 @@ function drawMerRover(ctx: CanvasRenderingContext2D, cx: number, cy: number) {
   ctx.strokeStyle = '#334155';
   ctx.lineWidth = 1.3;
   ctx.beginPath();
-  ctx.roundRect(-14, -36, 28, 12, 3);
+  ctx.roundRect(-15, -37, 30, 12, 3);
   ctx.fill();
   ctx.stroke();
+  ctx.fillStyle = '#0f172a';
+  ctx.beginPath();
+  ctx.arc(-8, -31, 2.2, 0, Math.PI * 2);
+  ctx.arc(8, -31, 2.2, 0, Math.PI * 2);
+  ctx.fill();
 
   ctx.restore();
 }
@@ -1164,21 +1588,24 @@ function drawVikingLander(ctx: CanvasRenderingContext2D, cx: number, cy: number)
   ctx.save();
   ctx.translate(cx, cy);
 
-  // 3 Landing legs & footpads
+  // Stationary 3 landing legs & circular footpads (zero wheels)
   ctx.strokeStyle = '#e2e8f0';
-  ctx.lineWidth = 3;
+  ctx.lineWidth = 3.2;
   for (const a of [-Math.PI / 2, Math.PI / 6, (5 * Math.PI) / 6]) {
     ctx.beginPath();
     ctx.moveTo(0, 0);
-    ctx.lineTo(Math.cos(a) * 52, Math.sin(a) * 52);
+    ctx.lineTo(Math.cos(a) * 54, Math.sin(a) * 54);
     ctx.stroke();
     ctx.fillStyle = '#cbd5e1';
+    ctx.strokeStyle = '#475569';
+    ctx.lineWidth = 1.2;
     ctx.beginPath();
-    ctx.arc(Math.cos(a) * 54, Math.sin(a) * 54, 7, 0, Math.PI * 2);
+    ctx.arc(Math.cos(a) * 56, Math.sin(a) * 56, 7.5, 0, Math.PI * 2);
     ctx.fill();
+    ctx.stroke();
   }
 
-  // Hexagonal 1976 Viking body + twin RTG windshields
+  // Hexagonal 1976 Viking body
   ctx.fillStyle = '#cbd5e1';
   ctx.strokeStyle = '#ffffff';
   ctx.lineWidth = 1.6;
@@ -1194,19 +1621,35 @@ function drawVikingLander(ctx: CanvasRenderingContext2D, cx: number, cy: number)
   ctx.fill();
   ctx.stroke();
 
-  // RTG thermal shields (orange/white accents)
-  ctx.fillStyle = '#f97316';
-  ctx.fillRect(-38, -10, 14, 20);
-  ctx.fillRect(24, -10, 14, 20);
+  // Orange & white RTG thermal covers
+  for (const rx of [-39, 25]) {
+    ctx.fillStyle = '#f8fafc';
+    ctx.strokeStyle = '#f97316';
+    ctx.lineWidth = 1.3;
+    ctx.fillRect(rx, -11, 14, 22);
+    ctx.strokeRect(rx, -11, 14, 22);
+    ctx.fillStyle = '#f97316';
+    ctx.fillRect(rx + 2, -9, 10, 8);
+    ctx.fillRect(rx + 2, 3, 10, 6);
+  }
 
-  // Circular High-Gain S-band Dish Antenna
+  // White High-Gain S-band Dish Antenna + tripod feed
   ctx.fillStyle = '#ffffff';
   ctx.strokeStyle = '#475569';
   ctx.lineWidth = 1.5;
   ctx.beginPath();
-  ctx.arc(0, -10, 18, 0, Math.PI * 2);
+  ctx.arc(0, -10, 19, 0, Math.PI * 2);
   ctx.fill();
   ctx.stroke();
+  ctx.strokeStyle = '#334155';
+  ctx.lineWidth = 1.1;
+  for (let i = 0; i < 3; i++) {
+    const a = (i * Math.PI * 2) / 3 - Math.PI / 2;
+    ctx.beginPath();
+    ctx.moveTo(Math.cos(a) * 16, -10 + Math.sin(a) * 16);
+    ctx.lineTo(0, -10);
+    ctx.stroke();
+  }
 
   // Soil sampler boom extending forward
   ctx.strokeStyle = '#94a3b8';

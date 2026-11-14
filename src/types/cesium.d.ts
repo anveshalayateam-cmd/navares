@@ -103,6 +103,8 @@ export interface CesiumViewer {
   entities: {
     add: (options: Record<string, unknown>) => CesiumEntity;
     getById: (id: string) => CesiumEntity | undefined;
+    remove: (entity: CesiumEntity) => boolean;
+    removeById: (id: string) => boolean;
     removeAll: () => void;
   };
   imageryLayers: {

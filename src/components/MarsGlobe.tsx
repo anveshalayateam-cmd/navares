@@ -17,6 +17,12 @@ import {
   sampleSatelliteOrbitArc,
 } from '../utils/marsMath';
 import {
+  RouteEndpoint,
+  SurvivalRouteResult,
+  computeOptimalSurvivalRoute,
+  wrapLongitudeDeg,
+} from '../utils/marsPathfinder';
+import {
   generateMarsElevationGrayscaleDataUrl,
   generateMarsRadiationDataUrl,
   generateMarsTemperatureDataUrl,
@@ -40,6 +46,7 @@ export interface MarsGlobeHandle {
   resetNorth: () => void;
   resetGlobe: () => void;
   clearMeasurement: () => void;
+  clearSurvivalRoute: () => void;
 }
 
 interface MarsGlobeProps {
@@ -49,6 +56,7 @@ interface MarsGlobeProps {
   weatherEnabled: boolean;
   weatherStations: MarsWeatherStation[];
   measureMode: boolean;
+  routeMode: boolean;
   onSelectTarget: (target: MarsTarget | null) => void;
   onHeadingChange: (headingRad: number) => void;
   onLiveSatellitesUpdate: (positions: Record<string, LiveSatellitePosition>) => void;
@@ -57,6 +65,8 @@ interface MarsGlobeProps {
   onMeasureHasPointAChange: (hasPointA: boolean) => void;
   onMeasureLivePreviewChange: (preview: LiveMeasurePreview | null) => void;
   onMeasureResultChange: (result: MeasureResult | null) => void;
+  onRouteStartChange: (start: RouteEndpoint | null) => void;
+  onRouteResultChange: (result: SurvivalRouteResult | null) => void;
 }
 
 export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function MarsGlobe(
@@ -67,6 +77,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     weatherEnabled,
     weatherStations,
     measureMode,
+    routeMode,
     onSelectTarget,
     onHeadingChange,
     onLiveSatellitesUpdate,
@@ -75,6 +86,8 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     onMeasureHasPointAChange,
     onMeasureLivePreviewChange,
     onMeasureResultChange,
+    onRouteStartChange,
+    onRouteResultChange,
   },
   ref
 ) {
@@ -117,11 +130,31 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     lockedLineEntity: null,
   });
 
+  // Survival Route Pathfinder refs
+  const routeStateRef = useRef<{
+    start: RouteEndpoint | null;
+    hasResult: boolean;
+    startEntity: CesiumEntity | null;
+    destEntity: CesiumEntity | null;
+    optimalLineEntity: CesiumEntity | null;
+    directLineEntity: CesiumEntity | null;
+    pulseRingEntities: CesiumEntity[];
+  }>({
+    start: null,
+    hasResult: false,
+    startEntity: null,
+    destEntity: null,
+    optimalLineEntity: null,
+    directLineEntity: null,
+    pulseRingEntities: [],
+  });
+
   const mapStyleRef = useRef<MapStyleMode>(mapStyle);
   const telemetryModeRef = useRef<TelemetryMode>(telemetryMode);
   const weatherEnabledRef = useRef<boolean>(weatherEnabled);
   const weatherStationsRef = useRef<MarsWeatherStation[]>(weatherStations);
   const measureModeRef = useRef<boolean>(measureMode);
+  const routeModeRef = useRef<boolean>(routeMode);
   const onSelectTargetRef = useRef(onSelectTarget);
   const onHeadingChangeRef = useRef(onHeadingChange);
   const onLiveSatellitesUpdateRef = useRef(onLiveSatellitesUpdate);
@@ -130,6 +163,8 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
   const onMeasureHasPointAChangeRef = useRef(onMeasureHasPointAChange);
   const onMeasureLivePreviewChangeRef = useRef(onMeasureLivePreviewChange);
   const onMeasureResultChangeRef = useRef(onMeasureResultChange);
+  const onRouteStartChangeRef = useRef(onRouteStartChange);
+  const onRouteResultChangeRef = useRef(onRouteResultChange);
 
   const [webglError, setWebglError] = useState<string | null>(null);
   const [isReady, setIsReady] = useState<boolean>(false);
@@ -139,6 +174,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
   weatherEnabledRef.current = weatherEnabled;
   weatherStationsRef.current = weatherStations;
   measureModeRef.current = measureMode;
+  routeModeRef.current = routeMode;
   onSelectTargetRef.current = onSelectTarget;
   onHeadingChangeRef.current = onHeadingChange;
   onLiveSatellitesUpdateRef.current = onLiveSatellitesUpdate;
@@ -147,6 +183,8 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
   onMeasureHasPointAChangeRef.current = onMeasureHasPointAChange;
   onMeasureLivePreviewChangeRef.current = onMeasureLivePreviewChange;
   onMeasureResultChangeRef.current = onMeasureResultChange;
+  onRouteStartChangeRef.current = onRouteStartChange;
+  onRouteResultChangeRef.current = onRouteResultChange;
 
   const zoomToLocationInternal = (lat: number, lon: number, alt = 15000) => {
     const viewer = viewerRef.current;
@@ -329,6 +367,25 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     onMeasureResultChangeRef.current(null);
   };
 
+  const clearSurvivalRouteInternal = () => {
+    const viewer = viewerRef.current;
+    const rs = routeStateRef.current;
+    rs.start = null;
+    rs.hasResult = false;
+    if (rs.startEntity) rs.startEntity.show = false;
+    if (rs.destEntity) rs.destEntity.show = false;
+    if (rs.optimalLineEntity) rs.optimalLineEntity.show = false;
+    if (rs.directLineEntity) rs.directLineEntity.show = false;
+    if (viewer && !viewer.isDestroyed()) {
+      for (const ring of rs.pulseRingEntities) {
+        viewer.entities.remove(ring);
+      }
+    }
+    rs.pulseRingEntities = [];
+    onRouteStartChangeRef.current(null);
+    onRouteResultChangeRef.current(null);
+  };
+
   useImperativeHandle(ref, () => ({
     zoomToLocation: zoomToLocationInternal,
     zoomToTarget: zoomToTargetInternal,
@@ -337,6 +394,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     resetNorth: resetNorthInternal,
     resetGlobe: resetGlobeInternal,
     clearMeasurement: clearMeasurementInternal,
+    clearSurvivalRoute: clearSurvivalRouteInternal,
   }));
 
   useEffect(() => {
@@ -809,6 +867,81 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
       },
     });
 
+    // Optimal Survival Route Pathfinder Entities
+    const rs = routeStateRef.current;
+    rs.startEntity = viewer.entities.add({
+      id: '__route-start',
+      show: false,
+      position: Cesium.Cartesian3.fromDegrees(0, 0, 2200, marsEllipsoid),
+      point: {
+        pixelSize: 10,
+        color: Cesium.Color.fromCssColorString('#10B981'),
+        outlineColor: Cesium.Color.WHITE,
+        outlineWidth: 2,
+        disableDepthTestDistance: Number.POSITIVE_INFINITY,
+      },
+      label: {
+        text: 'START',
+        font: '700 11px "Chakra Petch", sans-serif',
+        fillColor: Cesium.Color.fromCssColorString('#6EE7B7'),
+        outlineColor: Cesium.Color.fromCssColorString('#05070B'),
+        outlineWidth: 3,
+        style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+        verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+        pixelOffset: new Cesium.Cartesian2(0, -12),
+        disableDepthTestDistance: Number.POSITIVE_INFINITY,
+      },
+    });
+    rs.destEntity = viewer.entities.add({
+      id: '__route-dest',
+      show: false,
+      position: Cesium.Cartesian3.fromDegrees(0, 0, 2200, marsEllipsoid),
+      point: {
+        pixelSize: 10,
+        color: Cesium.Color.fromCssColorString('#22D3EE'),
+        outlineColor: Cesium.Color.WHITE,
+        outlineWidth: 2,
+        disableDepthTestDistance: Number.POSITIVE_INFINITY,
+      },
+      label: {
+        text: 'DEST',
+        font: '700 11px "Chakra Petch", sans-serif',
+        fillColor: Cesium.Color.fromCssColorString('#67E8F9'),
+        outlineColor: Cesium.Color.fromCssColorString('#05070B'),
+        outlineWidth: 3,
+        style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+        verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+        pixelOffset: new Cesium.Cartesian2(0, -12),
+        disableDepthTestDistance: Number.POSITIVE_INFINITY,
+      },
+    });
+    rs.directLineEntity = viewer.entities.add({
+      id: '__route-direct-line',
+      show: false,
+      polyline: {
+        positions: [],
+        width: 2,
+        arcType: Cesium.ArcType.GEODESIC,
+        material: new Cesium.PolylineDashMaterialProperty({
+          color: Cesium.Color.fromCssColorString('#94A3B8').withAlpha(0.8),
+          dashLength: 16,
+        }),
+      },
+    });
+    rs.optimalLineEntity = viewer.entities.add({
+      id: '__route-optimal-line',
+      show: false,
+      polyline: {
+        positions: [],
+        width: 4,
+        arcType: Cesium.ArcType.GEODESIC,
+        material: new Cesium.PolylineGlowMaterialProperty({
+          glowPower: 0.35,
+          color: Cesium.Color.fromCssColorString('#10B981').withAlpha(0.95),
+        }),
+      },
+    });
+
     viewer.camera.setView({
       destination: Cesium.Cartesian3.fromDegrees(65.0, 12.0, 9200000, marsEllipsoid),
       orientation: {
@@ -869,15 +1002,196 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     }, Cesium.ScreenSpaceEventType.LEFT_DOWN);
 
     const resolvePickedTarget = (entityId: string) => {
-      if (entityId.startsWith('__measure-')) return undefined;
+      if (entityId.startsWith('__measure-') || entityId.startsWith('__route-')) return undefined;
       const normalizedId = entityId.replace(/-(spacecraft|rover)$/, '');
       return MARS_TARGETS.find((t) => t.id === normalizedId);
+    };
+
+    const createEllipsoidRingPositions = (
+      centerLatDeg: number,
+      centerLonDeg: number,
+      radiusKm: number,
+      steps = 40
+    ) => {
+      const angRad = (radiusKm * 1000) / MARS_CONSTANTS.EQUATORIAL_RADIUS;
+      const lat0 = (centerLatDeg * Math.PI) / 180;
+      const lon0 = (centerLonDeg * Math.PI) / 180;
+      const pts = [];
+      for (let i = 0; i <= steps; i++) {
+        const brng = (i / steps) * Math.PI * 2;
+        const sinLat =
+          Math.sin(lat0) * Math.cos(angRad) +
+          Math.cos(lat0) * Math.sin(angRad) * Math.cos(brng);
+        const lat = Math.asin(Math.max(-1, Math.min(1, sinLat)));
+        const lon =
+          lon0 +
+          Math.atan2(
+            Math.sin(brng) * Math.sin(angRad) * Math.cos(lat0),
+            Math.cos(angRad) - Math.sin(lat0) * Math.sin(lat)
+          );
+        const latD = (lat * 180) / Math.PI;
+        const lonD = wrapLongitudeDeg((lon * 180) / Math.PI);
+        pts.push(Cesium.Cartesian3.fromDegrees(lonD, latD, 2500, marsEllipsoid));
+      }
+      return pts;
+    };
+
+    const renderSurvivalRouteOnGlobe = (result: SurvivalRouteResult) => {
+      for (const ring of rs.pulseRingEntities) {
+        viewer.entities.remove(ring);
+      }
+      rs.pulseRingEntities = [];
+
+      if (rs.directLineEntity) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const poly = rs.directLineEntity.polyline as any;
+        if (poly) {
+          poly.positions = result.directArcPoints.map((pt) =>
+            Cesium.Cartesian3.fromDegrees(pt.lonDeg, pt.latDeg, 1600, marsEllipsoid)
+          );
+        }
+        rs.directLineEntity.show = true;
+      }
+
+      if (rs.optimalLineEntity) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const poly = rs.optimalLineEntity.polyline as any;
+        if (poly) {
+          poly.positions = result.waypoints.map((wp) =>
+            Cesium.Cartesian3.fromDegrees(wp.lonDeg, wp.latDeg, 2400, marsEllipsoid)
+          );
+        }
+        rs.optimalLineEntity.show = true;
+      }
+
+      // Pulsing highlight rings around encountered Rovers (orange) & Satellite Relay corridors (cyan)
+      result.roverEncounters.forEach((enc, idx) => {
+        const ringPositions = createEllipsoidRingPositions(
+          enc.target.latitude,
+          enc.target.longitude,
+          120
+        );
+        const baseColor = Cesium.Color.fromCssColorString('#FF6B35');
+        const ringEntity = viewer.entities.add({
+          id: `__route-pulse-rover-${idx}`,
+          polyline: {
+            positions: ringPositions,
+            width: 3,
+            arcType: Cesium.ArcType.GEODESIC,
+            material: new Cesium.ColorMaterialProperty(
+              new Cesium.CallbackProperty(
+                () =>
+                  baseColor.withAlpha(
+                    0.32 + 0.63 * (0.5 + 0.5 * Math.sin(performance.now() * 0.0055 + idx))
+                  ),
+                false
+              )
+            ),
+          },
+        });
+        rs.pulseRingEntities.push(ringEntity);
+      });
+
+      result.orbiterEncounters.forEach((sat, idx) => {
+        const ringPositions = createEllipsoidRingPositions(sat.crossLatDeg, sat.crossLonDeg, 85);
+        const baseColor = Cesium.Color.fromCssColorString('#22D3EE');
+        const ringEntity = viewer.entities.add({
+          id: `__route-pulse-sat-${idx}`,
+          polyline: {
+            positions: ringPositions,
+            width: 2.5,
+            arcType: Cesium.ArcType.GEODESIC,
+            material: new Cesium.ColorMaterialProperty(
+              new Cesium.CallbackProperty(
+                () =>
+                  baseColor.withAlpha(
+                    0.28 + 0.58 * (0.5 + 0.5 * Math.sin(performance.now() * 0.0045 + idx + 1.4))
+                  ),
+                false
+              )
+            ),
+          },
+        });
+        rs.pulseRingEntities.push(ringEntity);
+      });
     };
 
     handler.setInputAction((click: { position: { x: number; y: number } }) => {
       const searchInput = document.getElementById('searchInput');
       if (searchInput && document.activeElement === searchInput) {
         searchInput.blur();
+      }
+
+      // Optimal Survival Route Pathfinder Click Handling (Globe surface OR existing pins)
+      if (routeModeRef.current) {
+        let pickedEndpoint: RouteEndpoint | null = null;
+        const pickedObj = viewer.scene.pick(click.position);
+        if (pickedObj?.id) {
+          const matchedPin = resolvePickedTarget(pickedObj.id.id);
+          if (matchedPin && matchedPin.category !== 'satellite') {
+            pickedEndpoint = {
+              latDeg: matchedPin.latitude,
+              lonDeg: matchedPin.longitude,
+              elevMeters: matchedPin.elevationMeters,
+              label: matchedPin.shortName,
+            };
+          }
+        }
+
+        if (!pickedEndpoint) {
+          const surfacePt = pickMarsSurfacePoint(click.position);
+          if (!surfacePt) return;
+          pickedEndpoint = {
+            latDeg: surfacePt.latDeg,
+            lonDeg: surfacePt.lonDeg,
+            elevMeters: surfacePt.elevMeters,
+          };
+        }
+
+        onCursorTelemetryChangeRef.current({
+          latDeg: pickedEndpoint.latDeg,
+          lonDeg: pickedEndpoint.lonDeg,
+          elevationMeters: pickedEndpoint.elevMeters,
+        });
+
+        const endpointCartesian = Cesium.Cartesian3.fromDegrees(
+          pickedEndpoint.lonDeg,
+          pickedEndpoint.latDeg,
+          2400,
+          marsEllipsoid
+        );
+
+        if (!rs.start || rs.hasResult) {
+          // 1st click or fresh Start after a completed route
+          for (const ring of rs.pulseRingEntities) {
+            viewer.entities.remove(ring);
+          }
+          rs.pulseRingEntities = [];
+          rs.start = pickedEndpoint;
+          rs.hasResult = false;
+          if (rs.startEntity) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (rs.startEntity as any).position = endpointCartesian;
+            rs.startEntity.show = true;
+          }
+          if (rs.destEntity) rs.destEntity.show = false;
+          if (rs.optimalLineEntity) rs.optimalLineEntity.show = false;
+          if (rs.directLineEntity) rs.directLineEntity.show = false;
+          onRouteStartChangeRef.current(pickedEndpoint);
+          onRouteResultChangeRef.current(null);
+        } else {
+          // 2nd click: set Destination and run A* multi-objective survival solver
+          if (rs.destEntity) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (rs.destEntity as any).position = endpointCartesian;
+            rs.destEntity.show = true;
+          }
+          const result = computeOptimalSurvivalRoute(rs.start, pickedEndpoint);
+          rs.hasResult = true;
+          renderSurvivalRouteOnGlobe(result);
+          onRouteResultChangeRef.current(result);
+        }
+        return;
       }
 
       // Measure Mode Click Handling (Point A -> Point B -> 3rd click starts fresh)
@@ -973,7 +1287,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
 
     handler.setInputAction((doubleClick: { position: unknown }) => {
-      if (measureModeRef.current) return;
+      if (measureModeRef.current || routeModeRef.current) return;
       const picked = viewer.scene.pick(doubleClick.position);
       if (picked?.id) {
         const matched = resolvePickedTarget(picked.id.id);
@@ -1104,20 +1418,26 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
               worldPos
             );
             if (winPos && Number.isFinite(winPos.x) && Number.isFinite(winPos.y)) {
+              const distMeters = Cesium.Cartesian3.distance(viewer.camera.positionWC, worldPos);
+              const isCloseUp = distMeters < 2_200_000;
               projected.push({
                 station,
                 x: winPos.x,
                 y: winPos.y,
                 visible: true,
+                isCloseUp,
               });
               continue;
             }
           }
-          projected.push({ station, x: -999, y: -999, visible: false });
+          projected.push({ station, x: -999, y: -999, visible: false, isCloseUp: false });
         }
 
         const sig = projected
-          .map((p) => `${p.visible ? 1 : 0}:${Math.round(p.x)},${Math.round(p.y)}`)
+          .map(
+            (p) =>
+              `${p.visible ? 1 : 0}:${p.isCloseUp ? 1 : 0}:${Math.round(p.x)},${Math.round(p.y)}`
+          )
           .join('|');
         if (sig !== lastBadgeSignature) {
           lastBadgeSignature = sig;
@@ -1284,7 +1604,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
       <div
         id="cesiumContainer"
         ref={containerRef}
-        style={{ touchAction: 'none', cursor: measureMode ? 'crosshair' : 'grab' }}
+        style={{ touchAction: 'none', cursor: measureMode || routeMode ? 'crosshair' : 'grab' }}
         className="w-full h-full"
         aria-label="Interactive 3D Mars Globe"
       />

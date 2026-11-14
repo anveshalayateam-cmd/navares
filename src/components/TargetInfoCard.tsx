@@ -1,12 +1,15 @@
-import { Crosshair, X } from 'lucide-react';
+import { CloudSun, Crosshair, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { CATEGORY_COLORS, CATEGORY_LABELS, MarsTarget, TelemetryMode } from '../data/marsData';
+import { MarsWeatherStation } from '../services/marsWeather';
 import { createTargetPhotoFallback, formatLatLon } from '../utils/marsMath';
 import { LiveSatellitePosition } from './MarsGlobe';
 
 interface TargetInfoCardProps {
   target: MarsTarget;
   liveSatellite?: LiveSatellitePosition;
+  weatherEnabled?: boolean;
+  weatherStation?: MarsWeatherStation;
   telemetryMode: TelemetryMode;
   onChangeTelemetryMode: (mode: TelemetryMode) => void;
   onZoomToSurface: (target: MarsTarget) => void;
@@ -16,6 +19,8 @@ interface TargetInfoCardProps {
 export function TargetInfoCard({
   target,
   liveSatellite,
+  weatherEnabled,
+  weatherStation,
   telemetryMode,
   onChangeTelemetryMode,
   onZoomToSurface,
@@ -139,6 +144,27 @@ export function TargetInfoCard({
             </dd>
           </div>
         </dl>
+
+        {/* Live/Calibrated Local Weather Telemetry when Weather Overlay is ON */}
+        {weatherEnabled && weatherStation && (
+          <div className="rounded-xl border border-cyan-400/25 bg-cyan-500/[0.06] p-3 space-y-1.5 text-xs">
+            <div className="flex items-center justify-between gap-2">
+              <span className="inline-flex items-center gap-1.5 font-semibold text-cyan-300">
+                <CloudSun className="h-3.5 w-3.5" aria-hidden="true" />
+                Local Surface Weather
+              </span>
+              <span className="font-mono-tabular text-[11px] text-slate-400">
+                {weatherStation.sol}
+              </span>
+            </div>
+            <div className="grid grid-cols-2 gap-x-3 gap-y-1 font-mono-tabular text-[11px] text-slate-200">
+              <span>Now: {weatherStation.currentTempC}</span>
+              <span className="text-right">Press: {weatherStation.pressurePa}</span>
+              <span>Wind: {weatherStation.windSummary}</span>
+              <span className="text-right text-cyan-200 truncate">{weatherStation.opacity}</span>
+            </div>
+          </div>
+        )}
 
         {/* Satellite-only 1x / 100x Orbit Speed Toggle */}
         {target.category === 'satellite' && (
