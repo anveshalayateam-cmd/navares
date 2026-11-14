@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { CursorTelemetry, CursorTelemetryPill } from './components/CursorTelemetryPill';
 import { InfoMenu } from './components/InfoMenu';
-import { MapStyleBar, MapStyleMode } from './components/MapStyleBar';
+import { MapStyleBar, MapStyleMode, ReliefMode } from './components/MapStyleBar';
 import {
   LiveSatellitePosition,
   MarsGlobe,
@@ -29,6 +29,7 @@ export default function App() {
 
   const [selectedTarget, setSelectedTarget] = useState<MarsTarget | null>(null);
   const [mapStyle, setMapStyle] = useState<MapStyleMode>('optical');
+  const [reliefMode, setReliefMode] = useState<ReliefMode>('default');
   const [telemetryMode, setTelemetryMode] = useState<TelemetryMode>('realtime');
   const [headingRad, setHeadingRad] = useState<number>(0);
 
@@ -70,6 +71,13 @@ export default function App() {
 
   const handleZoomToSurface = useCallback((target: MarsTarget) => {
     globeRef.current?.zoomToTarget(target);
+  }, []);
+
+  const handleCycleReliefMode = useCallback(() => {
+    setReliefMode((current) => {
+      const modes: ReliefMode[] = ['default', '1x', '2.5x', 'off'];
+      return modes[(modes.indexOf(current) + 1) % modes.length];
+    });
   }, []);
 
   const handleClearMeasurement = useCallback(() => {
@@ -147,6 +155,7 @@ export default function App() {
         ref={globeRef}
         selectedTargetId={selectedTarget?.id ?? null}
         mapStyle={mapStyle}
+        reliefMode={reliefMode}
         telemetryMode={telemetryMode}
         weatherEnabled={weatherEnabled}
         measureMode={measureMode}
@@ -191,6 +200,8 @@ export default function App() {
       <MapStyleBar
         mapStyle={mapStyle}
         onChangeMapStyle={setMapStyle}
+        reliefMode={reliefMode}
+        onCycleReliefMode={handleCycleReliefMode}
         weatherEnabled={weatherEnabled}
         onToggleWeather={() => setWeatherEnabled((prev) => !prev)}
       />

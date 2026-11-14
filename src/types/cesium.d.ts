@@ -43,6 +43,7 @@ export interface CesiumViewer {
       showGroundAtmosphere: boolean;
       atmosphereLightIntensity: number;
       depthTestAgainstTerrain: boolean;
+      pick: (ray: unknown, scene: unknown) => unknown;
       material?: unknown;
       tileLoadProgressEvent: {
         addEventListener: (cb: (queued: number) => void) => () => void;
@@ -98,6 +99,7 @@ export interface CesiumViewer {
     moveBackward: (amount?: number) => void;
     zoomIn: (amount?: number) => void;
     zoomOut: (amount?: number) => void;
+    getPickRay: (windowPosition: unknown) => unknown;
     pickEllipsoid: (windowPosition: unknown, ellipsoid: unknown) => unknown;
   };
   entities: {

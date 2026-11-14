@@ -2,7 +2,7 @@ import {
   MARS_CONSTANTS,
   MARS_TARGETS,
   MarsTarget,
-  sampleMarsElevationMeters,
+  getMarsElevation,
 } from '../data/marsData';
 import { sampleSatelliteOrbitArc } from './marsMath';
 import { computeSurfaceRadiationDose, getMarsSurfaceTempC } from './marsOverlayMaps';
@@ -336,7 +336,7 @@ export function computeOptimalSurvivalRoute(
     if (existing) return existing;
 
     const { latDeg, lonDeg } = getNodeCoords(row, col);
-    const elev = sampleMarsElevationMeters(lonDeg, latDeg);
+    const elev = getMarsElevation(latDeg, lonDeg);
     const rad = computeSurfaceRadiationDose(lonDeg, latDeg);
     const temp = getMarsSurfaceTempC(latDeg, lonDeg);
 
@@ -541,7 +541,7 @@ export function computeOptimalSurvivalRoute(
   const waypoints: RouteWaypoint[] = rawLatLons.map((pt) => ({
     latDeg: pt.latDeg,
     lonDeg: pt.lonDeg,
-    elevMeters: sampleMarsElevationMeters(pt.lonDeg, pt.latDeg),
+    elevMeters: getMarsElevation(pt.latDeg, pt.lonDeg),
     radDose: computeSurfaceRadiationDose(pt.lonDeg, pt.latDeg),
     tempC: getMarsSurfaceTempC(pt.latDeg, pt.lonDeg),
   }));

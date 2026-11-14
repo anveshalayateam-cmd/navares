@@ -1716,7 +1716,7 @@ export function sampleMarsElevationMeters(lonDeg: number, latDeg: number): numbe
   const rOly = Math.sqrt(dLonOly * dLonOly + dLatOly * dLatOly);
   let olympus = 0;
   if (rOly < 7.5) {
-    const shield = 20100 * Math.exp(-(rOly * rOly) / 14.5);
+    const shield = 20021 * Math.exp(-(rOly * rOly) / 14.5);
     const scarpBoost = rOly < 4.5 ? 2400 : 0;
     const caldera = rOly < 0.65 ? -400 * Math.exp(-(rOly * rOly) / 0.14) : 0;
     olympus = shield + scarpBoost + caldera;
@@ -1724,9 +1724,9 @@ export function sampleMarsElevationMeters(lonDeg: number, latDeg: number): numbe
 
   // Tharsis Montes trio (Ascraeus, Pavonis, Arsia)
   const montes: Array<[number, number, number]> = [
-    [-104.1, 11.8, 12800],
-    [-112.9, 1.5, 11800],
-    [-120.1, -8.3, 12400],
+    [-104.1, 11.8, 12493],
+    [-112.9, 1.5, 11044],
+    [-120.1, -8.3, 10906],
   ];
   let tharsisPeaks = 0;
   for (const [mLon, mLat, mAmp] of montes) {
@@ -1745,26 +1745,26 @@ export function sampleMarsElevationMeters(lonDeg: number, latDeg: number): numbe
   if (Math.abs(dLonVm) < 28 && Math.abs(dLatVm) < 7) {
     const alongFactor = Math.exp(-(dLonVm * dLonVm) / 280);
     const acrossFactor = Math.exp(-(dLatVm * dLatVm) / 3.6);
-    valles = -11800 * alongFactor * acrossFactor;
+    valles = -14038 * alongFactor * acrossFactor;
   }
 
   // Hellas Planitia Impact Basin (~ -8,200 m deepest basin at 42.4S, 70.5E)
   const dLonHel = wrapLonDiff(lonDeg, 70.5);
   const dLatHel = latDeg - -42.4;
   const r2Hel = (dLonHel * dLonHel) / 320 + (dLatHel * dLatHel) / 170;
-  const hellas = -9750 * Math.exp(-r2Hel) + 1200 * Math.exp(-Math.pow(Math.sqrt(r2Hel) - 1.35, 2) / 0.12);
+  const hellas = -9649 * Math.exp(-r2Hel) + 1200 * Math.exp(-Math.pow(Math.sqrt(r2Hel) - 1.35, 2) / 0.12);
 
   // Argyre Planitia Impact Basin (-5,200 m basin at 50S, 43W)
   const dLonArg = wrapLonDiff(lonDeg, -43.0);
   const dLatArg = latDeg - -50.0;
   const r2Arg = (dLonArg * dLonArg) / 170 + (dLatArg * dLatArg) / 95;
-  const argyre = -5600 * Math.exp(-r2Arg) + 900 * Math.exp(-Math.pow(Math.sqrt(r2Arg) - 1.35, 2) / 0.12);
+  const argyre = -6650 * Math.exp(-r2Arg) + 900 * Math.exp(-Math.pow(Math.sqrt(r2Arg) - 1.35, 2) / 0.12);
 
-  // Elysium Mons (+12,600 m volcano)
+  // Elysium Mons (+14,127 m peak)
   const dLonEly = wrapLonDiff(lonDeg, 147.2);
   const dLatEly = latDeg - 25.0;
   const r2Ely = dLonEly * dLonEly + dLatEly * dLatEly;
-  const elysium = r2Ely < 36 ? 12800 * Math.exp(-r2Ely / 5.2) : 0;
+  const elysium = r2Ely < 36 ? 17291 * Math.exp(-r2Ely / 5.2) : 0;
 
   // Gale Crater (-4,500 m Aeolis Palus floor at -4.59, 137.44; Mount Sharp peak at -5.08, 137.85)
   const dLonGale = wrapLonDiff(lonDeg, 137.44);
@@ -1772,7 +1772,7 @@ export function sampleMarsElevationMeters(lonDeg: number, latDeg: number): numbe
   const rGale = Math.sqrt(dLonGale * dLonGale + dLatGale * dLatGale);
   let gale = 0;
   if (rGale < 2.2) {
-    const bowl = -4850 * Math.exp(-(rGale * rGale) / 1.1);
+    const bowl = -4530 * Math.exp(-(rGale * rGale) / 1.1);
     const rim = 1100 * Math.exp(-Math.pow(rGale - 1.25, 2) / 0.08);
     const dLonSharp = wrapLonDiff(lonDeg, 137.85);
     const dLatSharp = latDeg - -5.08;
@@ -1842,4 +1842,38 @@ export function sampleMarsElevationMeters(lonDeg: number, latDeg: number): numbe
       acidalia +
       roughness
   );
+}
+
+/**
+ * Returns the MOLA-calibrated Mars surface elevation at latitude/longitude in meters.
+ * At terrain level 4 and above, deterministic multi-octave ridge and crater relief
+ * is added to the broad named landforms so close-up tiles have a rugged surface.
+ */
+export function getMarsElevation(latDeg: number, lonDeg: number, terrainLevel = 0): number {
+  const baseElevation = sampleMarsElevationMeters(lonDeg, latDeg);
+  if (terrainLevel < 4) return baseElevation;
+
+  const lonRad = (lonDeg * Math.PI) / 180;
+  const latRad = (latDeg * Math.PI) / 180;
+  const octaveFrequencies = [260, 520, 1040];
+  const octaveAmplitudes = [90, 42, 18];
+  let microRelief = 0;
+
+  for (let octave = 0; octave < octaveFrequencies.length; octave += 1) {
+    const frequency = octaveFrequencies[octave];
+    const amplitude = octaveAmplitudes[octave];
+    const warpedLat = latRad * frequency * 0.83 + Math.sin(lonRad * frequency * 0.37) * 0.7;
+    const ridgeWave = Math.sin(lonRad * frequency + Math.cos(latRad * frequency * 0.61) * 0.9)
+      * Math.cos(warpedLat);
+    const ridge = 1 - 2 * Math.abs(ridgeWave);
+
+    const craterCell = Math.cos(lonRad * frequency * 0.23 + Math.sin(latRad * frequency * 0.31))
+      * Math.cos(latRad * frequency * 0.23 - Math.sin(lonRad * frequency * 0.29));
+    const craterBowl = -Math.pow(Math.max(0, craterCell), 5);
+    const craterRim = Math.exp(-Math.pow((craterCell - 0.58) / 0.13, 2));
+
+    microRelief += amplitude * (0.34 * ridgeWave + 0.32 * ridge + 0.2 * craterBowl + 0.14 * craterRim);
+  }
+
+  return Math.round(baseElevation + microRelief);
 }
