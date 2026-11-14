@@ -88,6 +88,9 @@ export interface CesiumViewer {
       zoomFactor?: number;
       inertiaZoom?: number;
       inertiaSpin?: number;
+      inertiaTranslate?: number;
+      maximumMovementRatio?: number;
+      bounceAnimationTime?: number;
       zoomEventTypes: unknown[];
       tiltEventTypes: unknown[];
     };

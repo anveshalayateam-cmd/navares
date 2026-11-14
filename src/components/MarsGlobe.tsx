@@ -136,6 +136,10 @@ const PRIMARY_GLOBAL_ROVER_IDS = new Set([
 
 const MARS_TERRAIN_VERTICAL_EXAGGERATION = 2.2;
 
+const MIN_CAMERA_HEIGHT_METERS = 1500;
+const MAX_CAMERA_HEIGHT_METERS = 32_000_000;
+const CAMERA_INPUT_SENSITIVITY_MULTIPLIER = 0.6;
+
 const CTX_MAX_ALPHA = 0.68;
 const CTX_FADE_START_METERS = 900_000;
 const CTX_FULL_ALPHA_METERS = 40_000;
@@ -519,8 +523,8 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
       marsEllipsoid
     );
     const range = Math.max(
-      1500,
-      Math.min(32000000, Cesium.Cartesian3.distance(viewer.camera.positionWC, target))
+      MIN_CAMERA_HEIGHT_METERS,
+      Math.min(MAX_CAMERA_HEIGHT_METERS, Cesium.Cartesian3.distance(viewer.camera.positionWC, target))
     );
     const currentHeading = viewer.camera.heading;
     const targetHeading = ((headingRad % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
@@ -659,15 +663,18 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
         lastTs = now;
 
         const carto = marsEllipsoid.cartesianToCartographic(viewer.camera.positionWC);
-        const cameraHeight = carto ? Math.max(250, carto.height) : 10000;
-        const speedFactorPerSec = 0.85;
+        const cameraHeight = carto ? Math.max(MIN_CAMERA_HEIGHT_METERS, carto.height) : 10000;
+        const speedFactorPerSec = 0.85 * CAMERA_INPUT_SENSITIVITY_MULTIPLIER;
         const rawDelta = Math.max(20, cameraHeight * speedFactorPerSec * dtSec);
 
         if (direction > 0) {
-          const moveStep = Math.min(Math.max(0, cameraHeight - 250), rawDelta);
+          const moveStep = Math.min(Math.max(0, cameraHeight - MIN_CAMERA_HEIGHT_METERS), rawDelta);
           if (moveStep > 0) viewer.camera.moveForward(moveStep);
         } else {
-          const moveStep = Math.min(Math.max(0, 32000000 - cameraHeight), rawDelta);
+          const moveStep = Math.min(
+            Math.max(0, MAX_CAMERA_HEIGHT_METERS - cameraHeight),
+            rawDelta
+          );
           if (moveStep > 0) viewer.camera.moveBackward(moveStep);
         }
 
@@ -688,13 +695,13 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     viewer.camera.cancelFlight();
 
     const carto = marsEllipsoid.cartesianToCartographic(viewer.camera.positionWC);
-    const cameraHeight = carto ? Math.max(250, carto.height) : 10000;
-    const step = Math.max(15, cameraHeight * 0.06);
+    const cameraHeight = carto ? Math.max(MIN_CAMERA_HEIGHT_METERS, carto.height) : 10000;
+    const step = Math.max(15, cameraHeight * 0.06 * CAMERA_INPUT_SENSITIVITY_MULTIPLIER);
     if (deltaY < 0) {
-      const moveStep = Math.min(Math.max(0, cameraHeight - 250), step);
+      const moveStep = Math.min(Math.max(0, cameraHeight - MIN_CAMERA_HEIGHT_METERS), step);
       if (moveStep > 0) viewer.camera.moveForward(moveStep);
     } else {
-      const moveStep = Math.min(Math.max(0, 32000000 - cameraHeight), step);
+      const moveStep = Math.min(Math.max(0, MAX_CAMERA_HEIGHT_METERS - cameraHeight), step);
       if (moveStep > 0) viewer.camera.moveBackward(moveStep);
     }
   };
@@ -853,15 +860,18 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
 
     const controller = viewer.scene.screenSpaceCameraController;
     controller.enableCollisionDetection = false;
-    controller.minimumZoomDistance = 250;
-    controller.maximumZoomDistance = 32000000;
+    controller.minimumZoomDistance = MIN_CAMERA_HEIGHT_METERS;
+    controller.maximumZoomDistance = MAX_CAMERA_HEIGHT_METERS;
     controller.enableZoom = true;
     controller.enableRotate = true;
     controller.enableTilt = true;
     controller.enableTranslate = true;
-    controller.zoomFactor = 5.0;
+    controller.zoomFactor = 5.0 * CAMERA_INPUT_SENSITIVITY_MULTIPLIER;
     controller.inertiaZoom = 0.85;
-    controller.inertiaSpin = 0.9;
+    controller.inertiaSpin = 0.94;
+    controller.inertiaTranslate = 0.94;
+    controller.maximumMovementRatio = 0.05;
+    controller.bounceAnimationTime = 0;
     controller.zoomEventTypes = [
       Cesium.CameraEventType.WHEEL,
       {
