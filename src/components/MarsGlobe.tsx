@@ -882,7 +882,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     viewerRef.current = viewer;
     // Keep camera glides on a continuous render loop and allow high-refresh displays to render
     // above the default 60 FPS target without changing scene resolution or visual styling.
-    (viewer as any).targetFrameRate = 120;
+    (viewer as any).targetFrameRate = 240;
     (viewer.scene as any).requestRenderMode = false;
 
     // Rendering performance: cap the WebGL backbuffer on High-DPI screens (full devicePixelRatio
