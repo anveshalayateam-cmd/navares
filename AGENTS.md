@@ -13,6 +13,11 @@ ARES NAV — a React 19 + Vite + TypeScript 3D Mars globe viewer built on Cesium
 - The runtime proxies port **12000** → `https://work-1-...prod-runtime.all-hands.dev/`. To preview, run Vite on 12000 with `server.allowedHosts: true` (default config rejects the proxy host with "Blocked request").
 - To assert runtime state / catch console errors, temporarily inject a script into `index.html` that collects `window.onerror` / `console.error` / `unhandledrejection` and dumps values into a DOM node, then revert. `index.html` is served by Vite so edits are picked up immediately.
 
+## Bottom HUD layout notes
+- The bottom control rail lives in `src/components/MapStyleBar.tsx`. The data-layer radiogroup (`Optical`/`Radiation`/`Temperature`/`Elevation`) must stay horizontally centered on screen, with the Lat/Lon grid toggle immediately to its left (12px gap) and the Weather toggle to its right.
+- Centering is achieved with a symmetric 3-column grid (`md:grid-cols-[1fr_auto_1fr]`, left/right columns `1fr`), NOT `justify-between` or `absolute left-1/2` — those let an unequal-width side control (grid vs weather) shift the bar off true center. The left column uses `md:justify-self-end` so the grid button sits flush against the bar.
+- On `< md` the grid collapses to one column and controls stack centered, so nothing overlaps on mobile. Verify wrap with a narrow iframe since the page needs a real viewport width for media queries.
+
 ## Camera / interaction notes
 - `ScreenSpaceCameraController` is configured in `src/components/MarsGlobe.tsx` (the `controller` block near the Viewer init). Inertia, zoom limits, and input sensitivity live there.
 - `src/index.css` already applies `touch-action: none !important` to `#cesiumContainer`, `.cesium-viewer`, and the Cesium canvas — browser gestures are already disabled over the globe.

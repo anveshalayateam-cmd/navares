@@ -87,12 +87,13 @@ export function MapStyleBar({
         </div>
       )}
 
-      <div className="relative flex min-h-10 w-full max-w-[1440px] items-center justify-between gap-2 max-sm:flex-col max-sm:items-stretch max-sm:gap-1.5">
+      {/* Symmetric 3-column rail keeps the layer bar exactly centered; the grid control sits in the left column, immediately beside the bar. */}
+      <div className="relative grid w-full min-h-10 grid-cols-1 items-center justify-items-center gap-y-1.5 md:grid-cols-[1fr_auto_1fr] md:gap-x-3 md:gap-y-0">
         <button
           type="button"
           aria-pressed={gridEnabled}
           onClick={onToggleGrid}
-          className={`pointer-events-auto inline-flex shrink-0 cursor-pointer items-center gap-2 self-center rounded-full border px-3.5 py-2 text-xs font-medium whitespace-nowrap shadow-2xl backdrop-blur-md transition-colors duration-150 max-sm:self-start ${
+          className={`pointer-events-auto inline-flex shrink-0 cursor-pointer items-center gap-2 rounded-full border px-3.5 py-2 text-xs font-medium whitespace-nowrap shadow-2xl backdrop-blur-md transition-colors duration-150 md:justify-self-end ${
             gridEnabled
               ? 'border-cyan-300/45 bg-cyan-400/15 text-cyan-100'
               : 'border-white/15 bg-[#0B0F17]/82 text-slate-300 hover:bg-[#0B0F17] hover:text-white'
@@ -103,7 +104,7 @@ export function MapStyleBar({
           <span>Grid (Lat/Lon): {gridEnabled ? 'ON' : 'OFF'}</span>
         </button>
 
-        <div className="pointer-events-auto absolute left-1/2 -translate-x-1/2 max-sm:static max-sm:order-2 max-sm:self-center max-sm:translate-x-0">
+        <div className="pointer-events-auto md:justify-self-center">
           <div role="radiogroup" aria-label="Mars base imagery layer" className="flex items-center gap-1 rounded-full border border-white/15 bg-[#0B0F17]/82 p-1 shadow-2xl backdrop-blur-md">
             {STYLE_OPTIONS.map((opt) => {
               const active = mapStyle === opt.id;
@@ -135,7 +136,7 @@ export function MapStyleBar({
           type="button"
           aria-pressed={weatherEnabled}
           onClick={onToggleWeather}
-          className={`pointer-events-auto inline-flex shrink-0 cursor-pointer items-center gap-2 self-center rounded-full border px-4 py-2 text-xs font-medium whitespace-nowrap shadow-2xl backdrop-blur-md transition-colors duration-150 max-sm:order-3 max-sm:self-end ${
+          className={`pointer-events-auto inline-flex shrink-0 cursor-pointer items-center gap-2 rounded-full border px-4 py-2 text-xs font-medium whitespace-nowrap shadow-2xl backdrop-blur-md transition-colors duration-150 md:justify-self-start ${
             weatherEnabled
               ? 'border-cyan-400/50 bg-cyan-500/20 text-cyan-200'
               : 'border-white/15 bg-[#0B0F17]/82 text-slate-300 hover:bg-[#0B0F17] hover:text-white'
