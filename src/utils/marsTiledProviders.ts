@@ -21,8 +21,8 @@ interface CreateProceduralProviderOptions {
 
 /**
  * Creates a CesiumJS-compatible multi-resolution procedural ImageryProvider
- * supporting tile zoom levels 0..12 (~10 m/px effective detail at level 12),
- * preventing texture blur or pixelation when zooming below 40 km across
+ * supporting tile zoom levels 0..13 with 512px tiles and supersampled source
+ * grids, preventing texture blur or pixelation when zooming below 40 km across
  * Elevation, Radiation, and Temperature data layers.
  */
 export function createMarsProceduralImageryProvider({
@@ -32,8 +32,8 @@ export function createMarsProceduralImageryProvider({
   solarLongitudeLs = 0,
   maximumLevel = 12,
 }: CreateProceduralProviderOptions) {
-  const tileWidth = 256;
-  const tileHeight = 256;
+  const tileWidth = 512;
+  const tileHeight = 512;
   const errorEvent = new Cesium.Event();
   const creditLabel =
     mode === 'temperature'
@@ -96,7 +96,7 @@ export function createMarsProceduralImageryProvider({
       canvas.width = tileWidth;
       canvas.height = tileHeight;
       const ctx = canvas.getContext('2d');
-      const sampleSize = level <= 2 ? 64 : 96;
+      const sampleSize = level <= 2 ? 128 : level <= 5 ? 192 : 256;
       const scratch = getScratch(sampleSize);
       if (!ctx || !scratch) {
         return Promise.resolve(canvas);

@@ -228,6 +228,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
   const gridEntitiesRef = useRef<CesiumEntity[]>([]);
   const rebuildGridRef = useRef<((enabled: boolean, exaggeration: number) => void) | null>(null);
   const cameraAnimationFrameRef = useRef<number | null>(null);
+  const layerTransitionFrameRef = useRef<number | null>(null);
   const lastCursorPositionRef = useRef<{ x: number; y: number } | null>(null);
   const selectedRegionEntityRef = useRef<CesiumEntity | null>(null);
   const selectedTargetIdRef = useRef<string | null>(selectedTargetId);
@@ -964,9 +965,9 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
             // Grazing limb stays marginally darker so the shadowed crescent melts into deep space.
             float limbSoft = mix(0.82, 1.0, smoothstep(0.02, 0.30, max(n.z, 0.0)));
             float lit = daylight * limbSoft;
-            // Night side is drawn fully black with zero ambient washout (alpha reaches 1.0 on
-            // the unlit hemisphere, so no atmosphere/ambient tint leaks through).
-            float darkness = (1.0 - lit) * clamp(shadowStrength, 0.0, 1.0);
+            // Force the central night hemisphere to opaque pure black while preserving twilight.
+            float deepShadow = 1.0 - smoothstep(-0.045, 0.12, ndotl);
+            float darkness = max(deepShadow, (1.0 - lit) * 1.18) * clamp(shadowStrength, 0.0, 1.0);
             material.diffuse = vec3(0.0, 0.0, 0.0);
             material.emission = vec3(0.0, 0.0, 0.0);
             material.specular = 0.0;
@@ -1076,13 +1077,13 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     reliefShadeLayer.gamma = 0.9;
     reliefShadeLayerRef.current = reliefShadeLayer;
 
-    // 4. Multi-Resolution Seasonal Temperature Pyramid (Levels 0-12, bilinear NASA MGS TES)
+    // 4. Multi-Resolution Seasonal Temperature Pyramid (Levels 0-13, bilinear NASA MGS TES)
     const temperatureProvider = createMarsProceduralImageryProvider({
       Cesium,
       tilingScheme: marsTilingScheme,
       mode: 'temperature',
       solarLongitudeLs: temperatureLs,
-      maximumLevel: 12,
+      maximumLevel: 13,
     });
     const temperatureLayer = viewer.imageryLayers.addImageryProvider(temperatureProvider);
     configureLayerFiltering(temperatureLayer);
@@ -1092,12 +1093,12 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     temperatureLayerRef.current = temperatureLayer;
     loadedTemperatureLsRef.current = temperatureLs;
 
-    // 5. Multi-Resolution Surface Radiation Pyramid (Levels 0-12, MSL RAD calibrated)
+    // 5. Multi-Resolution Surface Radiation Pyramid (Levels 0-13, MSL RAD calibrated)
     const radiationProvider = createMarsProceduralImageryProvider({
       Cesium,
       tilingScheme: marsTilingScheme,
       mode: 'radiation',
-      maximumLevel: 12,
+      maximumLevel: 13,
     });
     const radiationLayer = viewer.imageryLayers.addImageryProvider(radiationProvider);
     configureLayerFiltering(radiationLayer);
@@ -1106,12 +1107,12 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     radiationLayer.contrast = 1.45;
     radiationLayerRef.current = radiationLayer;
 
-    // 6. Multi-Resolution Grayscale Elevation Pyramid (Levels 0-12, crisp below 40 km)
+    // 6. Multi-Resolution Grayscale Elevation Pyramid (Levels 0-13, crisp below 40 km)
     const elevationProvider = createMarsProceduralImageryProvider({
       Cesium,
       tilingScheme: marsTilingScheme,
       mode: 'elevation',
-      maximumLevel: 12,
+      maximumLevel: 13,
     });
     const elevationLayer = viewer.imageryLayers.addImageryProvider(elevationProvider);
     configureLayerFiltering(elevationLayer);
@@ -2534,6 +2535,10 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
       removePreRender();
       removePostRender();
       removeRenderError?.();
+      if (layerTransitionFrameRef.current !== null) {
+        window.cancelAnimationFrame(layerTransitionFrameRef.current);
+        layerTransitionFrameRef.current = null;
+      }
       container.removeEventListener('wheel', handleContainerWheel);
       canvas.removeEventListener('webglcontextlost', handleContextLost);
       canvas.removeEventListener('webglcontextrestored', handleContextRestored);
@@ -2551,7 +2556,8 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     };
   }, []);
 
-  // Switch between Optical, Temperature (over grayscale relief), Radiation (over darkened Viking), and Grayscale Elevation
+  // Switch between Optical, Temperature (over grayscale relief), Radiation (over darkened Viking), and Grayscale Elevation.
+  // Keep every imagery layer resident during the short cross-fade so Cesium never pops a texture in or out.
   useEffect(() => {
     if (!isReady) return;
     const opticalLayer = vikingLayerRef.current;
@@ -2561,24 +2567,15 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     const radiationLayer = radiationLayerRef.current;
     const elevationLayer = elevationLayerRef.current;
 
+    const layers: Array<{ layer: CesiumImageryLayer | null; targetAlpha: number }> = [];
     if (opticalLayer) {
-      if (mapStyle === 'optical') {
-        opticalLayer.show = true;
-        opticalLayer.contrast = 1.08;
-        opticalLayer.brightness = 1.0;
-        opticalLayer.saturation = 1.15;
-        opticalLayer.gamma = 1.0;
-      } else if (mapStyle === 'radiation') {
-        opticalLayer.show = true;
-        opticalLayer.brightness = 0.30;
-        opticalLayer.saturation = 0.15;
-        opticalLayer.contrast = 1.25;
-        opticalLayer.gamma = 0.90;
-      } else {
-        opticalLayer.show = false;
-      }
+      const isOpticalBase = mapStyle === 'optical' || mapStyle === 'radiation';
+      opticalLayer.contrast = mapStyle === 'optical' ? 1.08 : 1.25;
+      opticalLayer.brightness = mapStyle === 'optical' ? 1.0 : 0.30;
+      opticalLayer.saturation = mapStyle === 'optical' ? 1.15 : 0.15;
+      opticalLayer.gamma = mapStyle === 'optical' ? 1.0 : 0.90;
+      layers.push({ layer: opticalLayer, targetAlpha: isOpticalBase ? 1.0 : 0.0 });
     }
-
     if (ctxLayer) {
       const viewer = viewerRef.current;
       const marsEllipsoid = marsEllipsoidRef.current;
@@ -2588,26 +2585,62 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
         if (carto) camHeight = carto.height;
       }
       const ctxOpacity = getCtxFadeAlpha(camHeight);
-      ctxLayer.alpha = ctxOpacity;
-      ctxLayer.show = mapStyle === 'optical' && ctxOpacity > 0.003;
+      layers.push({ layer: ctxLayer, targetAlpha: mapStyle === 'optical' ? ctxOpacity : 0.0 });
     }
 
     if (reliefShadeLayer) {
       // Crisp 200m grayscale terrain relief serves as underlying shading for Temperature & Elevation
-      reliefShadeLayer.show = mapStyle === 'temperature' || mapStyle === 'elevation';
+      layers.push({
+        layer: reliefShadeLayer,
+        targetAlpha: mapStyle === 'temperature' || mapStyle === 'elevation' ? 1.0 : 0.0,
+      });
     }
 
     if (temperatureLayer) {
-      temperatureLayer.show = mapStyle === 'temperature';
+      layers.push({ layer: temperatureLayer, targetAlpha: mapStyle === 'temperature' ? 0.85 : 0.0 });
     }
 
     if (radiationLayer) {
-      radiationLayer.show = mapStyle === 'radiation';
+      layers.push({ layer: radiationLayer, targetAlpha: mapStyle === 'radiation' ? 0.88 : 0.0 });
     }
 
     if (elevationLayer) {
-      elevationLayer.show = mapStyle === 'elevation';
+      layers.push({ layer: elevationLayer, targetAlpha: mapStyle === 'elevation' ? 0.72 : 0.0 });
     }
+
+    if (layerTransitionFrameRef.current !== null) {
+      window.cancelAnimationFrame(layerTransitionFrameRef.current);
+    }
+    const starts = layers.map(({ layer }) => layer?.alpha ?? 0);
+    const startedAt = performance.now();
+    const durationMs = 420;
+    const animate = (now: number) => {
+      const progress = Math.min(1, (now - startedAt) / durationMs);
+      const eased = progress * progress * (3 - 2 * progress);
+      layers.forEach(({ layer, targetAlpha }, index) => {
+        if (!layer) return;
+        layer.show = true;
+        layer.alpha = starts[index] + (targetAlpha - starts[index]) * eased;
+      });
+      if (progress < 1) {
+        layerTransitionFrameRef.current = window.requestAnimationFrame(animate);
+      } else {
+        layers.forEach(({ layer, targetAlpha }) => {
+          if (!layer) return;
+          layer.alpha = targetAlpha;
+          layer.show = targetAlpha > 0.003;
+        });
+        layerTransitionFrameRef.current = null;
+      }
+    };
+    layerTransitionFrameRef.current = window.requestAnimationFrame(animate);
+
+    return () => {
+      if (layerTransitionFrameRef.current !== null) {
+        window.cancelAnimationFrame(layerTransitionFrameRef.current);
+        layerTransitionFrameRef.current = null;
+      }
+    };
   }, [mapStyle, isReady]);
 
   useEffect(() => {
@@ -2630,7 +2663,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
       tilingScheme: marsTilingScheme,
       mode: 'temperature',
       solarLongitudeLs: temperatureLs,
-      maximumLevel: 12,
+      maximumLevel: 13,
     });
     const nextLayer = viewer.imageryLayers.addImageryProvider(provider);
     nextLayer.magnificationFilter = Cesium.TextureMagnificationFilter.LINEAR;
