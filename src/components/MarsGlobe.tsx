@@ -7,7 +7,6 @@ import {
   TelemetryMode,
   sampleMarsElevationMeters,
 } from '../data/marsData';
-import { MarsWeatherStation } from '../services/marsWeather';
 import { CesiumEntity, CesiumImageryLayer, CesiumViewer } from '../types/cesium';
 import {
   computeSatelliteCartesian,
@@ -26,11 +25,12 @@ import {
   generateMarsElevationGrayscaleDataUrl,
   generateMarsRadiationDataUrl,
   generateMarsTemperatureDataUrl,
+  formatMarsSurfaceTempC,
+  getMarsSurfaceTempC,
 } from '../utils/marsOverlayMaps';
 import { CursorTelemetry } from './CursorTelemetryPill';
 import { MapStyleMode } from './MapStyleBar';
 import { LiveMeasurePreview, MeasureResult } from './MeasureToolOverlay';
-import { ProjectedWeatherBadge } from './WeatherBadges';
 
 export interface LiveSatellitePosition {
   latDeg: number;
@@ -54,13 +54,11 @@ interface MarsGlobeProps {
   mapStyle: MapStyleMode;
   telemetryMode: TelemetryMode;
   weatherEnabled: boolean;
-  weatherStations: MarsWeatherStation[];
   measureMode: boolean;
   routeMode: boolean;
   onSelectTarget: (target: MarsTarget | null) => void;
   onHeadingChange: (headingRad: number) => void;
   onLiveSatellitesUpdate: (positions: Record<string, LiveSatellitePosition>) => void;
-  onWeatherBadgesUpdate: (badges: ProjectedWeatherBadge[]) => void;
   onCursorTelemetryChange: (telemetry: CursorTelemetry | null) => void;
   onMeasureHasPointAChange: (hasPointA: boolean) => void;
   onMeasureLivePreviewChange: (preview: LiveMeasurePreview | null) => void;
@@ -69,19 +67,31 @@ interface MarsGlobeProps {
   onRouteResultChange: (result: SurvivalRouteResult | null) => void;
 }
 
+const DENSE_REGION_LABEL_IDS = new Set([
+  'acidalia-planitia',
+  'pathfinder',
+  'mawrth-vallis',
+  'oxia-planum',
+]);
+
+function getTargetPinLabel(target: MarsTarget, weatherEnabled: boolean): string {
+  if (!weatherEnabled) return target.shortName;
+  return `${target.shortName} • ${formatMarsSurfaceTempC(
+    getMarsSurfaceTempC(target.latitude, target.longitude)
+  )}`;
+}
+
 export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function MarsGlobe(
   {
     selectedTargetId,
     mapStyle,
     telemetryMode,
     weatherEnabled,
-    weatherStations,
     measureMode,
     routeMode,
     onSelectTarget,
     onHeadingChange,
     onLiveSatellitesUpdate,
-    onWeatherBadgesUpdate,
     onCursorTelemetryChange,
     onMeasureHasPointAChange,
     onMeasureLivePreviewChange,
@@ -152,13 +162,11 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
   const mapStyleRef = useRef<MapStyleMode>(mapStyle);
   const telemetryModeRef = useRef<TelemetryMode>(telemetryMode);
   const weatherEnabledRef = useRef<boolean>(weatherEnabled);
-  const weatherStationsRef = useRef<MarsWeatherStation[]>(weatherStations);
   const measureModeRef = useRef<boolean>(measureMode);
   const routeModeRef = useRef<boolean>(routeMode);
   const onSelectTargetRef = useRef(onSelectTarget);
   const onHeadingChangeRef = useRef(onHeadingChange);
   const onLiveSatellitesUpdateRef = useRef(onLiveSatellitesUpdate);
-  const onWeatherBadgesUpdateRef = useRef(onWeatherBadgesUpdate);
   const onCursorTelemetryChangeRef = useRef(onCursorTelemetryChange);
   const onMeasureHasPointAChangeRef = useRef(onMeasureHasPointAChange);
   const onMeasureLivePreviewChangeRef = useRef(onMeasureLivePreviewChange);
@@ -172,13 +180,11 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
   mapStyleRef.current = mapStyle;
   telemetryModeRef.current = telemetryMode;
   weatherEnabledRef.current = weatherEnabled;
-  weatherStationsRef.current = weatherStations;
   measureModeRef.current = measureMode;
   routeModeRef.current = routeMode;
   onSelectTargetRef.current = onSelectTarget;
   onHeadingChangeRef.current = onHeadingChange;
   onLiveSatellitesUpdateRef.current = onLiveSatellitesUpdate;
-  onWeatherBadgesUpdateRef.current = onWeatherBadgesUpdate;
   onCursorTelemetryChangeRef.current = onCursorTelemetryChange;
   onMeasureHasPointAChangeRef.current = onMeasureHasPointAChange;
   onMeasureLivePreviewChangeRef.current = onMeasureLivePreviewChange;
@@ -629,6 +635,9 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     for (const target of MARS_TARGETS) {
       const colorHex = CATEGORY_COLORS[target.category];
       const cesiumColor = Cesium.Color.fromCssColorString(colorHex);
+      const labelDistanceDisplayCondition = DENSE_REGION_LABEL_IDS.has(target.id)
+        ? new Cesium.DistanceDisplayCondition(0, 5_000_000)
+        : undefined;
 
       if (target.category === 'satellite' && target.orbit) {
         const positionProperty = new Cesium.CallbackProperty(() => {
@@ -649,7 +658,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
             disableDepthTestDistance: Number.POSITIVE_INFINITY,
           },
           label: {
-            text: target.shortName,
+            text: getTargetPinLabel(target, weatherEnabledRef.current),
             font: '600 12px "Chakra Petch", sans-serif',
             fillColor: Cesium.Color.WHITE,
             outlineColor: Cesium.Color.fromCssColorString('#05070B'),
@@ -659,6 +668,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
             pixelOffset: farLabelOffset,
             eyeOffset: pinEyeOffset,
             disableDepthTestDistance: Number.POSITIVE_INFINITY,
+            distanceDisplayCondition: labelDistanceDisplayCondition,
           },
         });
         pinMap.set(target.id, satPin);
@@ -734,7 +744,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
             disableDepthTestDistance: Number.POSITIVE_INFINITY,
           },
           label: {
-            text: target.shortName,
+            text: getTargetPinLabel(target, weatherEnabledRef.current),
             font: '600 12px "Chakra Petch", sans-serif',
             fillColor: Cesium.Color.WHITE,
             outlineColor: Cesium.Color.fromCssColorString('#05070B'),
@@ -744,6 +754,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
             pixelOffset: farLabelOffset,
             eyeOffset: pinEyeOffset,
             disableDepthTestDistance: Number.POSITIVE_INFINITY,
+            distanceDisplayCondition: labelDistanceDisplayCondition,
           },
         });
         pinMap.set(target.id, roverPin);
@@ -789,7 +800,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
             disableDepthTestDistance: Number.POSITIVE_INFINITY,
           },
           label: {
-            text: target.shortName,
+            text: getTargetPinLabel(target, weatherEnabledRef.current),
             font: '600 12px "Chakra Petch", sans-serif',
             fillColor: Cesium.Color.WHITE,
             outlineColor: Cesium.Color.fromCssColorString('#05070B'),
@@ -799,6 +810,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
             pixelOffset: farLabelOffset,
             eyeOffset: pinEyeOffset,
             disableDepthTestDistance: Number.POSITIVE_INFINITY,
+            distanceDisplayCondition: labelDistanceDisplayCondition,
           },
         });
         pinMap.set(target.id, surfacePin);
@@ -1379,14 +1391,11 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
       }
     });
 
-    // postRender: Dynamic MRO CTX Overlay, Compass Heading & Weather Badges
+    // postRender: Dynamic MRO CTX Overlay & Compass Heading
     let lastHeading = 0;
-    let lastBadgeSignature = '';
 
     const removePostRender = viewer.scene.postRender.addEventListener(() => {
       if (viewer.isDestroyed()) return;
-
-      const occluder = new Cesium.EllipsoidalOccluder(marsEllipsoid, viewer.camera.positionWC);
 
       const camCarto = marsEllipsoid.cartesianToCartographic(viewer.camera.position);
       const camHeight = camCarto ? camCarto.height : 9200000;
@@ -1401,52 +1410,6 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
         onHeadingChangeRef.current(currentHeading);
       }
 
-      if (weatherEnabledRef.current && weatherStationsRef.current.length > 0) {
-        const projected: ProjectedWeatherBadge[] = [];
-
-        for (const station of weatherStationsRef.current) {
-          const worldPos = Cesium.Cartesian3.fromDegrees(
-            station.longitude,
-            station.latitude,
-            1500,
-            marsEllipsoid
-          );
-          const isFront = occluder.isPointVisible(worldPos);
-          if (isFront) {
-            const winPos = Cesium.SceneTransforms.worldToWindowCoordinates(
-              viewer.scene,
-              worldPos
-            );
-            if (winPos && Number.isFinite(winPos.x) && Number.isFinite(winPos.y)) {
-              const distMeters = Cesium.Cartesian3.distance(viewer.camera.positionWC, worldPos);
-              const isCloseUp = distMeters < 2_200_000;
-              projected.push({
-                station,
-                x: winPos.x,
-                y: winPos.y,
-                visible: true,
-                isCloseUp,
-              });
-              continue;
-            }
-          }
-          projected.push({ station, x: -999, y: -999, visible: false, isCloseUp: false });
-        }
-
-        const sig = projected
-          .map(
-            (p) =>
-              `${p.visible ? 1 : 0}:${p.isCloseUp ? 1 : 0}:${Math.round(p.x)},${Math.round(p.y)}`
-          )
-          .join('|');
-        if (sig !== lastBadgeSignature) {
-          lastBadgeSignature = sig;
-          onWeatherBadgesUpdateRef.current(projected);
-        }
-      } else if (lastBadgeSignature !== '') {
-        lastBadgeSignature = '';
-        onWeatherBadgesUpdateRef.current([]);
-      }
     });
 
     const canvas = viewer.scene.canvas;
@@ -1568,10 +1531,15 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
   }, [mapStyle, isReady]);
 
   useEffect(() => {
-    if (!weatherEnabled) {
-      onWeatherBadgesUpdateRef.current([]);
+    if (!isReady) return;
+    for (const target of MARS_TARGETS) {
+      const pin = pinEntitiesRef.current.get(target.id);
+      const label = pin?.label as any;
+      if (label) {
+        label.text = getTargetPinLabel(target, weatherEnabled);
+      }
     }
-  }, [weatherEnabled]);
+  }, [weatherEnabled, isReady]);
 
   useEffect(() => {
     if (!measureMode && isReady) {

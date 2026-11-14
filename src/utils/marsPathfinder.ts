@@ -5,7 +5,7 @@ import {
   sampleMarsElevationMeters,
 } from '../data/marsData';
 import { sampleSatelliteOrbitArc } from './marsMath';
-import { computeSurfaceRadiationDose, computeSurfaceTemperatureC } from './marsOverlayMaps';
+import { computeSurfaceRadiationDose, getMarsSurfaceTempC } from './marsOverlayMaps';
 
 const MARS_RADIUS_KM = MARS_CONSTANTS.EQUATORIAL_RADIUS / 1000;
 const DEG_TO_RAD = Math.PI / 180;
@@ -338,7 +338,7 @@ export function computeOptimalSurvivalRoute(
     const { latDeg, lonDeg } = getNodeCoords(row, col);
     const elev = sampleMarsElevationMeters(lonDeg, latDeg);
     const rad = computeSurfaceRadiationDose(lonDeg, latDeg);
-    const temp = computeSurfaceTemperatureC(lonDeg, latDeg);
+    const temp = getMarsSurfaceTempC(latDeg, lonDeg);
 
     // 1. Minimum Radiation (+weight)
     const radNorm = clamp((rad - 0.35) / 0.85, 0, 1);
@@ -543,7 +543,7 @@ export function computeOptimalSurvivalRoute(
     lonDeg: pt.lonDeg,
     elevMeters: sampleMarsElevationMeters(pt.lonDeg, pt.latDeg),
     radDose: computeSurfaceRadiationDose(pt.lonDeg, pt.latDeg),
-    tempC: computeSurfaceTemperatureC(pt.lonDeg, pt.latDeg),
+    tempC: getMarsSurfaceTempC(pt.latDeg, pt.lonDeg),
   }));
 
   let optimalDistanceKm = 0;

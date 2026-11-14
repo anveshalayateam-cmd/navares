@@ -33,63 +33,88 @@ function doseToBlackGreenRgb(dose: number): [number, number, number] {
   return [Math.round(125 * k), 255, Math.round(65 + (155 - 65) * k)];
 }
 
+/** Exact shared color ramp for the Temperature canvas and its on-screen legend. */
+export const MARS_TEMPERATURE_GRADIENT_CSS =
+  'linear-gradient(90deg, #1a0066 0%, #00e5ff 34.48%, #00e640 65.52%, #ffe600 75.86%, #ff6600 86.21%, #ff0000 100%)';
+
+const TEMPERATURE_COLOR_STOPS: Array<[number, [number, number, number]]> = [
+  [-125, [26, 0, 102]], // Violet-blue
+  [-75, [0, 229, 255]], // Cyan
+  [-30, [0, 230, 64]], // Green
+  [-15, [255, 230, 0]], // Yellow
+  [0, [255, 102, 0]], // Orange
+  [20, [255, 0, 0]], // Red
+];
+
 /**
- * Computes realistic daytime/mean Martian surface temperature (°C) at (lonDeg, latDeg):
- * - Polar caps (>65° N/S) & Olympus Mons summit: -125°C to -90°C
- * - Mid-latitudes (Utopia Planitia & southern highlands): -85°C to -45°C
- * - Equatorial belt (20°N–20°S), Valles Marineris, Gale & Jezero Craters: -30°C to +20°C
+ * Estimates daytime Martian surface temperature in Celsius at (latitude, longitude).
+ * Regional ranges are constrained to the map legend: polar caps -125..-95°C,
+ * high volcanic peaks -80..-65°C, mid-latitude plains -45..-30°C,
+ * equatorial craters/plains -15..+5°C, and deep equatorial canyons +5..+15°C.
  */
-export function computeSurfaceTemperatureC(lonDeg: number, latDeg: number): number {
-  const elevMeters = sampleMarsElevationMeters(lonDeg, latDeg);
-  const absLat = Math.abs(latDeg);
+export function getMarsSurfaceTempC(lat: number, lon: number): number {
+  const latitude = Math.max(-90, Math.min(90, lat));
+  const longitude = ((lon + 180) % 360 + 360) % 360 - 180;
+  const absLat = Math.abs(latitude);
+  const elevationMeters = sampleMarsElevationMeters(longitude, latitude);
+  const clamp = (value: number, min: number, max: number) =>
+    Math.max(min, Math.min(max, value));
 
-  // Smooth latitudinal solar heating profile: +12°C warm equatorial belt -> -118°C polar caps
-  const latNorm = Math.min(1, absLat / 85);
-  const baseTemp = 12 - 130 * Math.pow(latNorm, 1.55);
+  // Polar caps and high-latitude ice stay at the cold end of the legend.
+  if (absLat > 70) {
+    return -95 - clamp((absLat - 70) * 1.5, 0, 30);
+  }
 
-  // Adiabatic & thin-air cooling at high altitude (Olympus Mons +21 km drops ~85°C colder)
-  // Low basins (<0 m) retain warmer thermal inertia & denser air
-  const elevKm = elevMeters / 1000;
-  const altitudeEffect = elevKm > 0 ? -4.4 * elevKm : -1.4 * elevKm;
+  // Olympus Mons and the Tharsis Montes are colder than surrounding plains.
+  if (absLat < 35 && elevationMeters >= 9000) {
+    return -65 - clamp((elevationMeters - 9000) / 800, 0, 15);
+  }
 
-  // Sunlit equatorial thermal hotspot boost around Valles Marineris & Syrtis/Jezero dark basalt
-  const lonRad = (lonDeg * Math.PI) / 180;
-  const basaltWarmth = 4.5 * Math.cos(lonRad * 2 - 0.7) * Math.exp(-(absLat * absLat) / 900);
+  // Deep Valles Marineris floor: low elevation and sunlit equatorial canyon.
+  if (
+    absLat < 20 &&
+    longitude >= -82 &&
+    longitude <= -48 &&
+    elevationMeters < -2500
+  ) {
+    return 5 + clamp((-elevationMeters - 2500) / 450, 0, 1) * 10;
+  }
 
-  return Math.max(-125, Math.min(20, baseTemp + altitudeEffect + basaltWarmth));
+  // Viking 1 and Pathfinder sit in cool northern plains despite their low latitude.
+  if (
+    absLat >= 14 &&
+    absLat <= 28 &&
+    longitude >= -55 &&
+    longitude <= -25
+  ) {
+    return -30 - clamp(absLat - 14, 0, 15);
+  }
+
+  // Gale, Jezero, Meridiani/Opportunity and comparable equatorial plains.
+  if (absLat <= 25) {
+    return -15 + 20 * (1 - absLat / 25);
+  }
+
+  // Northern and mid-latitude plains trend from -30°C toward -45°C by 60°.
+  return -30 - clamp((absLat - 30) / 30, 0, 1) * 15;
+}
+
+export function formatMarsSurfaceTempC(tempC: number): string {
+  const rounded = Math.round(tempC);
+  return `${rounded > 0 ? '+' : ''}${rounded}°C`;
 }
 
 function tempToRainbowRgb(tempC: number): [number, number, number] {
-  // Map -125°C .. +20°C -> [0 .. 1]
-  const t = Math.max(0, Math.min(1, (tempC - -125) / (20 - -125)));
-
-  // Stops matching the legend:
-  // 0.00 (-125°C): Deep Violet #1a0066 (26, 0, 102)
-  // 0.18 (-99°C):  Blue        #0044ff (0, 68, 255)
-  // 0.35 (-75°C):  Cyan        #00e5ff (0, 229, 255)
-  // 0.54 (-47°C):  Green       #00e640 (0, 230, 64)
-  // 0.70 (-24°C):  Yellow      #ffe600 (255, 230, 0)
-  // 0.86 (0°C):    Orange      #ff6600 (255, 102, 0)
-  // 1.00 (+20°C):  Red         #ff0000 (255, 0, 0)
-  const stops: Array<[number, [number, number, number]]> = [
-    [0.0, [26, 0, 102]],
-    [0.18, [0, 68, 255]],
-    [0.35, [0, 229, 255]],
-    [0.54, [0, 230, 64]],
-    [0.7, [255, 230, 0]],
-    [0.86, [255, 102, 0]],
-    [1.0, [255, 0, 0]],
-  ];
-
-  for (let i = 0; i < stops.length - 1; i++) {
-    const [t0, c0] = stops[i];
-    const [t1, c1] = stops[i + 1];
-    if (t <= t1) {
-      const k = (t - t0) / (t1 - t0);
+  const temp = Math.max(-125, Math.min(20, tempC));
+  for (let i = 0; i < TEMPERATURE_COLOR_STOPS.length - 1; i++) {
+    const [temp0, color0] = TEMPERATURE_COLOR_STOPS[i];
+    const [temp1, color1] = TEMPERATURE_COLOR_STOPS[i + 1];
+    if (temp <= temp1) {
+      const k = (temp - temp0) / (temp1 - temp0);
       return [
-        Math.round(c0[0] + (c1[0] - c0[0]) * k),
-        Math.round(c0[1] + (c1[1] - c0[1]) * k),
-        Math.round(c0[2] + (c1[2] - c0[2]) * k),
+        Math.round(color0[0] + (color1[0] - color0[0]) * k),
+        Math.round(color0[1] + (color1[1] - color0[1]) * k),
+        Math.round(color0[2] + (color1[2] - color0[2]) * k),
       ];
     }
   }
@@ -159,7 +184,7 @@ export function generateMarsRadiationDataUrl(width = 2048, height = 1024): strin
 
 export function generateMarsTemperatureDataUrl(width = 2048, height = 1024): string {
   return renderEquirectangularMap(width, height, (lon, lat) =>
-    tempToRainbowRgb(computeSurfaceTemperatureC(lon, lat))
+    tempToRainbowRgb(getMarsSurfaceTempC(lat, lon))
   );
 }
 

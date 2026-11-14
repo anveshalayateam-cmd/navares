@@ -1,4 +1,5 @@
 import { CloudSun } from 'lucide-react';
+import { MARS_TEMPERATURE_GRADIENT_CSS } from '../utils/marsOverlayMaps';
 
 export type MapStyleMode = 'optical' | 'temperature' | 'radiation' | 'elevation';
 
@@ -32,15 +33,21 @@ export function MapStyleBar({
             className="h-2.5 w-64 sm:w-80 rounded-full border border-white/15"
             style={{
               background:
-                'linear-gradient(90deg, #1a0066 0%, #0044ff 18%, #00e5ff 35%, #00e640 54%, #ffe600 70%, #ff6600 86%, #ff0000 100%)',
+                MARS_TEMPERATURE_GRADIENT_CSS,
             }}
           />
-          <div className="flex items-center justify-between gap-2 font-mono-tabular text-[10px] sm:text-[11px] text-slate-200 whitespace-nowrap">
-            <span className="text-indigo-300">-125°C</span>
-            <span className="text-cyan-300">-75°C</span>
-            <span className="text-emerald-300">-30°C</span>
-            <span className="text-orange-400">0°C</span>
-            <span className="text-red-400 font-semibold">+20°C</span>
+          <div className="relative h-4 w-64 sm:w-80 font-mono-tabular text-[10px] sm:text-[11px] text-slate-200 whitespace-nowrap">
+            <span className="absolute left-0 text-indigo-300">-125°C</span>
+            <span className="absolute text-cyan-300" style={{ left: '34.48%', transform: 'translateX(-50%)' }}>
+              -75°C
+            </span>
+            <span className="absolute text-emerald-300" style={{ left: '65.52%', transform: 'translateX(-50%)' }}>
+              -30°C
+            </span>
+            <span className="absolute text-orange-400" style={{ left: '86.21%', transform: 'translateX(-50%)' }}>
+              0°C
+            </span>
+            <span className="absolute right-0 text-red-400 font-semibold">+20°C</span>
           </div>
         </div>
       )}
@@ -93,7 +100,7 @@ export function MapStyleBar({
         </div>
       )}
 
-      {/* Map Style Segmented Pill + Separate Weather Toggle Pill */}
+      {/* Map Style Segmented Pill + Inline Weather Label Toggle */}
       <div className="pointer-events-auto flex flex-wrap items-center justify-center gap-2">
         <div
           role="radiogroup"
@@ -134,7 +141,7 @@ export function MapStyleBar({
               ? 'border-cyan-400/50 bg-cyan-500/20 text-cyan-200'
               : 'border-white/15 bg-[#0B0F17]/82 text-slate-300 hover:text-white hover:bg-[#0B0F17]'
           }`}
-          title="Toggle live Martian surface weather telemetry badges"
+          title="Show or hide modeled surface temperatures on existing map labels"
         >
           <CloudSun
             className={`h-3.5 w-3.5 ${weatherEnabled ? 'text-cyan-300' : 'text-slate-400'}`}

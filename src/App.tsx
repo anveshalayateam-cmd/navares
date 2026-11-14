@@ -16,8 +16,7 @@ import { NavControls } from './components/NavControls';
 import { SearchBar } from './components/SearchBar';
 import { SurvivalRouteOverlay } from './components/SurvivalRouteOverlay';
 import { TargetInfoCard } from './components/TargetInfoCard';
-import { ProjectedWeatherBadge, WeatherBadges } from './components/WeatherBadges';
-import { MARS_TARGETS, MarsTarget, TelemetryMode } from './data/marsData';
+import { MarsTarget, TelemetryMode } from './data/marsData';
 import {
   FALLBACK_WEATHER_STATIONS,
   MarsWeatherStation,
@@ -37,7 +36,6 @@ export default function App() {
   const [weatherStations, setWeatherStations] = useState<MarsWeatherStation[]>(
     FALLBACK_WEATHER_STATIONS
   );
-  const [weatherBadges, setWeatherBadges] = useState<ProjectedWeatherBadge[]>([]);
   const weatherFetchedRef = useRef<boolean>(false);
 
   const [liveSatellites, setLiveSatellites] = useState<Record<string, LiveSatellitePosition>>({});
@@ -72,14 +70,6 @@ export default function App() {
 
   const handleZoomToSurface = useCallback((target: MarsTarget) => {
     globeRef.current?.zoomToTarget(target);
-  }, []);
-
-  const handleSelectWeatherStationTarget = useCallback((targetId: string) => {
-    const matched = MARS_TARGETS.find((t) => t.id === targetId);
-    if (matched) {
-      setSelectedTarget(matched);
-      globeRef.current?.zoomToTarget(matched);
-    }
   }, []);
 
   const handleClearMeasurement = useCallback(() => {
@@ -159,13 +149,11 @@ export default function App() {
         mapStyle={mapStyle}
         telemetryMode={telemetryMode}
         weatherEnabled={weatherEnabled}
-        weatherStations={weatherStations}
         measureMode={measureMode}
         routeMode={routeMode}
         onSelectTarget={setSelectedTarget}
         onHeadingChange={setHeadingRad}
         onLiveSatellitesUpdate={setLiveSatellites}
-        onWeatherBadgesUpdate={setWeatherBadges}
         onCursorTelemetryChange={setCursorTelemetry}
         onMeasureHasPointAChange={setMeasureHasPointA}
         onMeasureLivePreviewChange={setMeasureLivePreview}
@@ -173,15 +161,6 @@ export default function App() {
         onRouteStartChange={setRouteStart}
         onRouteResultChange={setRouteResult}
       />
-
-      {/* Toggleable Surface Weather Telemetry Badges */}
-      {weatherEnabled && (
-        <WeatherBadges
-          badges={weatherBadges}
-          selectedTargetId={selectedTarget?.id ?? null}
-          onSelectStationTarget={handleSelectWeatherStationTarget}
-        />
-      )}
 
       {/* Control 1: Top-Left Floating Search & Quick-Jump Pill */}
       <SearchBar onSelectAndFly={handleSearchSelectAndFly} />

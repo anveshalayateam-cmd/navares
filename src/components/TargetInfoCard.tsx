@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { CATEGORY_COLORS, CATEGORY_LABELS, MarsTarget, TelemetryMode } from '../data/marsData';
 import { MarsWeatherStation } from '../services/marsWeather';
 import { createTargetPhotoFallback, formatLatLon } from '../utils/marsMath';
+import { formatMarsSurfaceTempC, getMarsSurfaceTempC } from '../utils/marsOverlayMaps';
 import { LiveSatellitePosition } from './MarsGlobe';
 
 interface TargetInfoCardProps {
@@ -42,6 +43,14 @@ export function TargetInfoCard({
     target.category === 'satellite' && liveSatellite
       ? `${liveSatellite.altKm.toFixed(0)} km Orbit · ${target.orbit?.inclinationDeg}° Inc`
       : target.elevationLabel;
+
+  const surfaceTempLat =
+    target.category === 'satellite' && liveSatellite ? liveSatellite.latDeg : target.latitude;
+  const surfaceTempLon =
+    target.category === 'satellite' && liveSatellite ? liveSatellite.lonDeg : target.longitude;
+  const modeledSurfaceTemp = formatMarsSurfaceTempC(
+    getMarsSurfaceTempC(surfaceTempLat, surfaceTempLon)
+  );
 
   const radiationColorClass =
     target.radiationSeverity === 'critical'
@@ -126,9 +135,11 @@ export function TargetInfoCard({
             </dd>
           </div>
           <div className="flex items-baseline justify-between gap-3">
-            <dt className="text-slate-400 shrink-0">Surface Temp Range</dt>
+            <dt className="text-slate-400 shrink-0">
+              {target.category === 'satellite' ? 'Surface Temp at Subpoint' : 'Modeled Surface Temp'}
+            </dt>
             <dd className="font-mono-tabular font-medium text-amber-300 text-right">
-              {target.surfaceTempRange}
+              {modeledSurfaceTemp}
             </dd>
           </div>
           <div className="flex items-baseline justify-between gap-3">
@@ -151,17 +162,16 @@ export function TargetInfoCard({
             <div className="flex items-center justify-between gap-2">
               <span className="inline-flex items-center gap-1.5 font-semibold text-cyan-300">
                 <CloudSun className="h-3.5 w-3.5" aria-hidden="true" />
-                Local Surface Weather
+                Local Weather Conditions
               </span>
               <span className="font-mono-tabular text-[11px] text-slate-400">
                 {weatherStation.sol}
               </span>
             </div>
             <div className="grid grid-cols-2 gap-x-3 gap-y-1 font-mono-tabular text-[11px] text-slate-200">
-              <span>Now: {weatherStation.currentTempC}</span>
-              <span className="text-right">Press: {weatherStation.pressurePa}</span>
+              <span>Pressure: {weatherStation.pressurePa}</span>
               <span>Wind: {weatherStation.windSummary}</span>
-              <span className="text-right text-cyan-200 truncate">{weatherStation.opacity}</span>
+              <span className="col-span-2 text-cyan-200 truncate">Atmosphere: {weatherStation.opacity}</span>
             </div>
           </div>
         )}
