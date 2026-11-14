@@ -1004,7 +1004,10 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
             float lit = daylight * limbSoft;
             // Force the central night hemisphere to opaque pure black while preserving twilight.
             float deepShadow = 1.0 - smoothstep(-0.045, 0.12, ndotl);
-            float darkness = max(deepShadow, (1.0 - lit) * 1.18) * clamp(shadowStrength, 0.0, 1.0);
+            float shadowEnabled = step(0.001, shadowStrength);
+            float coreBlack = deepShadow * shadowEnabled;
+            float twilightShadow = (1.0 - lit) * clamp(shadowStrength, 0.0, 1.0);
+            float darkness = max(coreBlack, twilightShadow);
             material.diffuse = vec3(0.0, 0.0, 0.0);
             material.emission = vec3(0.0, 0.0, 0.0);
             material.specular = 0.0;
