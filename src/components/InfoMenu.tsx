@@ -723,9 +723,11 @@ export function InfoMenu({ hasTargetCardOpen }: InfoMenuProps) {
                       Developers
                     </h3>
                     <p className="text-xs sm:text-[13px] leading-relaxed text-slate-200">
-                      Created by two high school students:{' '}
-                      <span className="font-semibold text-white">Jatin Kumar</span> and{' '}
-                      <span className="font-semibold text-white">Raunak Kumar</span>.
+                     Created by three high school students:{' '}
+<span className="font-semibold text-white">Jatin Kumar</span>,{' '}
+<span className="font-semibold text-white">Raunak Kumar</span>, and{' '}
+<span className="font-semibold text-white">Jasraj Singh</span>.
+
                     </p>
                   </div>
 
