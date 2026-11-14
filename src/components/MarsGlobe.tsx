@@ -996,18 +996,12 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
             vec3 n = normalize(materialInput.normalEC);
             vec3 l = normalize(lightDirEC);
             float ndotl = dot(n, l);
-            // Smooth twilight ramp: 0 = deep night, 1 = full daylight, faded gradually across
-            // a soft terminator band so there is never a hard day/night edge.
-            float daylight = smoothstep(-0.08, 0.34, ndotl);
-            // Grazing limb stays marginally darker so the shadowed crescent melts into deep space.
-            float limbSoft = mix(0.82, 1.0, smoothstep(0.02, 0.30, max(n.z, 0.0)));
-            float lit = daylight * limbSoft;
-            // Force the central night hemisphere to opaque pure black while preserving twilight.
-            float deepShadow = 1.0 - smoothstep(-0.045, 0.12, ndotl);
+            // The enabled night hemisphere is an opaque black occlusion mask. Only the
+            // terminator band (0.08..0.42) is translucent, so no terrain or imagery leaks
+            // through the shadow core while the edge still fades smoothly into daylight.
             float shadowEnabled = step(0.001, shadowStrength);
-            float coreBlack = deepShadow * shadowEnabled;
-            float twilightShadow = (1.0 - lit) * clamp(shadowStrength, 0.0, 1.0);
-            float darkness = max(coreBlack, twilightShadow);
+            float edgeFade = smoothstep(0.08, 0.42, ndotl);
+            float darkness = (1.0 - edgeFade) * shadowEnabled;
             material.diffuse = vec3(0.0, 0.0, 0.0);
             material.emission = vec3(0.0, 0.0, 0.0);
             material.specular = 0.0;
