@@ -50,6 +50,7 @@ import { RouteEndpoint, SurvivalRouteResult } from './utils/marsPathfinder';
 
 export default function App() {
   const globeRef = useRef<MarsGlobeHandle | null>(null);
+  const [globeReady, setGlobeReady] = useState(false);
 
   const [selectedTarget, setSelectedTarget] = useState<MarsTarget | null>(null);
   const [mapStyle, setMapStyle] = useState<MapStyleMode>('optical');
@@ -397,8 +398,12 @@ export default function App() {
         onSiteRectHasCornerAChange={setSiteHasCornerA}
         onSiteRectLivePreviewChange={setSiteLivePreview}
         onSiteRectComplete={setSiteBounds}
+        onGlobeReady={setGlobeReady}
       />
 
+      {/* Hide all chrome until the globe finishes loading */}
+      {globeReady && (
+        <>
       {/* Control 1: Top-Left Floating Search & Quick-Jump Pill */}
       <SearchBar
         onSelectAndFly={handleSearchSelectAndFly}
@@ -535,6 +540,8 @@ export default function App() {
 
       {/* Top-Right 3-Dot Menu */}
       <InfoMenu hasTargetCardOpen={Boolean(selectedTarget)} />
+        </>
+      )}
     </main>
   );
 }
