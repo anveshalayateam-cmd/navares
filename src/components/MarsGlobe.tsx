@@ -3712,22 +3712,34 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     if (!isReady) return;
     const viewer = viewerRef.current;
     if (!viewer || viewer.isDestroyed()) return;
-    // Reassert native Sun-driven lighting after map-style and shadow-control updates.
-    const Cesium = window.Cesium;
-    viewer.scene.light = new Cesium.SunLight();
-    viewer.scene.globe.enableLighting = true;
-    viewer.scene.globe.dynamicAtmosphereLighting = true;
-    viewer.scene.globe.dynamicAtmosphereLightingFromSun = true;
-    viewer.scene.globe.nightFadeInDistance = 1e7;
-    viewer.scene.globe.nightFadeOutDistance = 5e7;
 
-    // Apply the shadow toggle to every surface style; a style switch must not
-    // restore night-side imagery and wash out the terminator.
-    const imageryLayers = viewer.imageryLayers;
-    for (let index = 0; index < imageryLayers.length; index += 1) {
-      const layer = imageryLayers.get(index);
-      layer.dayAlpha = 1.0;
-      layer.nightAlpha = sunShadowEnabled ? 0.0 : 1.0;
+    try {
+      // The scene's SunLight is initialized once with the Viewer. Do not replace it
+      // during React updates; doing so can race Cesium's per-frame lighting uniforms.
+      const globe = viewer.scene.globe;
+      const imageryLayers = viewer.imageryLayers;
+      if (!globe || !imageryLayers || typeof imageryLayers.get !== 'function') {
+        throw new Error('Cesium globe or imagery layer collection is unavailable.');
+      }
+
+      globe.enableLighting = true;
+      globe.dynamicAtmosphereLighting = true;
+      globe.dynamicAtmosphereLightingFromSun = true;
+      globe.nightFadeInDistance = 1e7;
+      globe.nightFadeOutDistance = 5e7;
+
+      // Apply the shadow toggle to every surface style; style switches must not
+      // restore night-side imagery and wash out the terminator.
+      for (let index = 0; index < imageryLayers.length; index += 1) {
+        const layer = imageryLayers.get(index);
+        if (!layer) continue;
+        layer.dayAlpha = 1.0;
+        layer.nightAlpha = sunShadowEnabled ? 0.0 : 1.0;
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error('[MarsGlobe] Failed to synchronize Sun lighting:', error);
+      setWebglError(`Mars lighting failed to initialize: ${message}`);
     }
   }, [sunShadowEnabled, mapStyle, isReady]);
 
