@@ -4037,6 +4037,12 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     const effectiveShadow = sunShadowEnabled && mapStyle === 'optical';
     viewer.scene.globe.enableLighting = effectiveShadow;
     viewer.scene.globe.dynamicAtmosphereLighting = effectiveShadow;
+
+    // Hide all surface imagery on Mars's night side so the shadow is fully black.
+    const imageryLayers = viewer.scene.globe.imageryLayers;
+    for (let index = 0; index < imageryLayers.length; index += 1) {
+      imageryLayers.get(index).nightAlpha = effectiveShadow ? 0.0 : 1.0;
+    }
   }, [sunShadowEnabled, mapStyle, isReady]);
 
   useEffect(() => {
