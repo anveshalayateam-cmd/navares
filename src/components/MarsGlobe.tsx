@@ -215,21 +215,6 @@ function getCtxFadeAlpha(cameraHeightMeters: number): number {
   return CTX_MAX_ALPHA * smooth;
 }
 
-const HAZE_START_ALTITUDE_METERS = 200_000;
-const HAZE_FULL_ALTITUDE_METERS = 100_000;
-
-function getMartianHazeFactor(altitudeMeters: number): number {
-  const progress = Math.max(
-    0,
-    Math.min(
-      1,
-      (HAZE_START_ALTITUDE_METERS - altitudeMeters) /
-        (HAZE_START_ALTITUDE_METERS - HAZE_FULL_ALTITUDE_METERS)
-    )
-  );
-  return progress * progress * (3 - 2 * progress);
-}
-
 // Clouds: full at high altitude, progressive fade as the camera zooms in.
 const CLOUDS_MAX_ALPHA = 0.48;
 const CLOUDS_FADE_START_METERS = 3_500_000; // begin fading below ~3500 km
@@ -296,7 +281,7 @@ function lerp(a: number, b: number, t: number): number {
 function applyOpticalColorForAltitude(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   layer: any,
-  cameraHeightMeters: number,
+  t: number,
   isOpticalMode: boolean
 ): void {
   if (!layer) return;
@@ -308,12 +293,11 @@ function applyOpticalColorForAltitude(
     layer.gamma = 0.9;
     return;
   }
-  const t = getAltitudeColorBlend(cameraHeightMeters);
-  layer.hue = lerp(OPTICAL_COLOR_FAR.hue, OPTICAL_COLOR_NEAR.hue, t);
-  layer.contrast = lerp(OPTICAL_COLOR_FAR.contrast, OPTICAL_COLOR_NEAR.contrast, t);
-  layer.brightness = lerp(OPTICAL_COLOR_FAR.brightness, OPTICAL_COLOR_NEAR.brightness, t);
-  layer.saturation = lerp(OPTICAL_COLOR_FAR.saturation, OPTICAL_COLOR_NEAR.saturation, t);
-  layer.gamma = lerp(OPTICAL_COLOR_FAR.gamma, OPTICAL_COLOR_NEAR.gamma, t);
+  // Cesium imagery-layer defaults preserve the ungraded orbital appearance at t = 0.
+  layer.hue = lerp(0.0, -0.06, t);
+  layer.saturation = lerp(1.0, 1.45, t);
+  layer.contrast = lerp(1.0, 1.18, t);
+  layer.gamma = lerp(1.0, 0.82, t);
 }
 
 function applyCtxColorForAltitude(
@@ -1323,8 +1307,8 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     viewer.scene.highDynamicRange = false;
     const marsSkyAtmosphere = new Cesium.SkyAtmosphere(marsEllipsoid);
     marsSkyAtmosphere.show = false;
-    marsSkyAtmosphere.hueShift = -0.45;
-    marsSkyAtmosphere.saturationShift = 0.15;
+    marsSkyAtmosphere.hueShift = 0.0;
+    marsSkyAtmosphere.saturationShift = 0.0;
     marsSkyAtmosphere.brightnessShift = -1.0;
     marsSkyAtmosphere.atmosphereRayleighScaleHeight = 6800;
     marsSkyAtmosphere.atmosphereMieScaleHeight = 3200;
@@ -1355,8 +1339,8 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     viewer.scene.globe.lightingFadeOutDistance = 1_000_000_000;
     viewer.scene.globe.lightingFadeInDistance = 1_000_000_000;
     viewer.scene.globe.atmosphereLightIntensity = 0.0;
-    viewer.scene.globe.atmosphereHueShift = -0.45;
-    viewer.scene.globe.atmosphereSaturationShift = 0.15;
+    viewer.scene.globe.atmosphereHueShift = 0.0;
+    viewer.scene.globe.atmosphereSaturationShift = 0.0;
     viewer.scene.globe.atmosphereBrightnessShift = -1.0;
     viewer.scene.globe.atmosphereRayleighScaleHeight = 6800;
     viewer.scene.globe.atmosphereMieScaleHeight = 3200;
@@ -3378,11 +3362,12 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
       const camCarto = marsEllipsoid.cartesianToCartographic(viewer.camera.positionWC);
       const camHeight = camCarto ? camCarto.height : DEFAULT_CAMERA_HEIGHT_METERS;
       const ctxOpacity = getCtxFadeAlpha(camHeight);
-      // Progressive color: orbital mosaic far away → sandy image palette when zoomed in
+      // Restrict the warm iron-oxide grade to low-altitude optical views.
+      const t = Cesium.Math.clamp((10000 - camHeight) / 9000, 0.0, 1.0);
       if (mapStyleRef.current === 'optical' || mapStyleRef.current === 'radiation') {
         applyOpticalColorForAltitude(
           vikingLayerRef.current,
-          camHeight,
+          t,
           mapStyleRef.current === 'optical'
         );
         applyCtxColorForAltitude(ctxLayerRef.current, camHeight);
@@ -3407,21 +3392,26 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
         }
       }
 
-      // Atmosphere is completely visible at 2x strength by 100 km and fades smoothly to invisible by 200 km
-      const hazeFactor = getMartianHazeFactor(camHeight);
-      const atmVisible = hazeFactor > 0.002;
-      const targetBrightnessShift = -1.0 + 0.65 * hazeFactor;
-      const targetSkyLightIntensity = 100.0 * hazeFactor;
-      const targetGlobeLightIntensity = 50.0 * hazeFactor;
+      // Butterscotch-amber sky and ground atmosphere fade in only below 10 km.
+      const atmVisible = t > 0.002;
+      const targetHueShift = Cesium.Math.lerp(0.0, -0.55, t);
+      const targetSaturationShift = Cesium.Math.lerp(0.0, 0.05, t);
+      const targetBrightnessShift = Cesium.Math.lerp(-1.0, -0.45, t);
+      const targetSkyLightIntensity = 100.0 * t;
+      const targetGlobeLightIntensity = 50.0 * t;
       const skyAtmosphere = viewer.scene.skyAtmosphere;
       if (skyAtmosphere) {
         if (skyAtmosphere.show !== atmVisible) {
           skyAtmosphere.show = atmVisible;
         }
         if (
+          Math.abs(skyAtmosphere.hueShift - targetHueShift) > 0.001 ||
+          Math.abs(skyAtmosphere.saturationShift - targetSaturationShift) > 0.001 ||
           Math.abs(skyAtmosphere.brightnessShift - targetBrightnessShift) > 0.001 ||
           Math.abs((skyAtmosphere.atmosphereLightIntensity ?? 0) - targetSkyLightIntensity) > 0.05
         ) {
+          skyAtmosphere.hueShift = targetHueShift;
+          skyAtmosphere.saturationShift = targetSaturationShift;
           skyAtmosphere.brightnessShift = targetBrightnessShift;
           skyAtmosphere.atmosphereLightIntensity = targetSkyLightIntensity;
         }
@@ -3430,14 +3420,18 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
         viewer.scene.globe.showGroundAtmosphere = atmVisible;
       }
       if (
+        Math.abs((viewer.scene.globe.atmosphereHueShift ?? 0.0) - targetHueShift) > 0.001 ||
+        Math.abs((viewer.scene.globe.atmosphereSaturationShift ?? 0.0) - targetSaturationShift) > 0.001 ||
         Math.abs((viewer.scene.globe.atmosphereBrightnessShift ?? -1.0) - targetBrightnessShift) > 0.001 ||
         Math.abs(viewer.scene.globe.atmosphereLightIntensity - targetGlobeLightIntensity) > 0.05
       ) {
+        viewer.scene.globe.atmosphereHueShift = targetHueShift;
+        viewer.scene.globe.atmosphereSaturationShift = targetSaturationShift;
         viewer.scene.globe.atmosphereBrightnessShift = targetBrightnessShift;
         viewer.scene.globe.atmosphereLightIntensity = targetGlobeLightIntensity;
       }
       if (viewer.scene.fog) {
-        const targetFogDensity = 0.0000032 * hazeFactor;
+        const targetFogDensity = 0.0000032 * t;
         if (
           viewer.scene.fog.enabled !== atmVisible ||
           Math.abs((viewer.scene.fog.density ?? 0) - targetFogDensity) > 0.0000001
