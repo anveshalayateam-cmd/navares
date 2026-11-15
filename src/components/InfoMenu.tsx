@@ -137,6 +137,28 @@ const DATA_ATTRIBUTIONS = [
     ),
   },
   {
+    title: 'Loading Screen Mars Image',
+    description: (
+      <>
+        True-color full-disk view of Mars shown while the 3D globe initializes. Based on
+        Emirates Mars Mission (Hope) EXI imagery acquired around{' '}
+        <span className="font-mono-tabular text-slate-200">30 August 2021</span>, processed
+        into natural color by{' '}
+        <em className="text-slate-300">Kevin M. Gill</em> (filters f635 / f546 / f437;
+        CU/LASP EMM/EXI). Source:{' '}
+        <a
+          href="https://commons.wikimedia.org/wiki/File:Mars_-_August_30_2021_-_Flickr_-_Kevin_M._Gill.png"
+          target="_blank"
+          rel="noreferrer"
+          className="text-cyan-300 underline underline-offset-2 hover:text-cyan-200"
+        >
+          Wikimedia Commons
+        </a>{' '}/ Flickr; license{' '}
+        <span className="font-mono-tabular text-slate-200">CC BY 2.0</span>.
+      </>
+    ),
+  },
+  {
     title: 'Mission Photography',
     description: (
       <>

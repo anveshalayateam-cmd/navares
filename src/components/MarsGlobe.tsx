@@ -98,6 +98,7 @@ interface MarsGlobeProps {
   onSiteRectHasCornerAChange: (hasCornerA: boolean) => void;
   onSiteRectLivePreviewChange: (preview: LiveSiteRectPreview | null) => void;
   onSiteRectComplete: (bounds: SiteBounds) => void;
+  onGlobeReady?: (ready: boolean) => void;
 }
 
 const PRIMARY_GLOBAL_LANDMARK_IDS = new Set([
@@ -274,6 +275,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     onSiteRectHasCornerAChange,
     onSiteRectLivePreviewChange,
     onSiteRectComplete,
+    onGlobeReady,
   },
   ref
 ) {
@@ -3389,6 +3391,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     rafId = requestAnimationFrame(tickOrbit);
 
     setIsReady(true);
+    onGlobeReady?.(true);
 
     return () => {
       stopContinuousZoomInternal();
@@ -3802,7 +3805,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
       />
 
       {!isReady && !webglError && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center bg-black z-30">
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-black z-[100]">
           <div className="relative w-full h-full max-w-full max-h-full flex items-center justify-center overflow-hidden">
             <img
               src="/assets/aistudio/MM_2bfd2967.webp"
