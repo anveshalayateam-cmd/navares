@@ -137,38 +137,6 @@ const DATA_ATTRIBUTIONS = [
     ),
   },
   {
-    title: 'Phobos & Deimos 3D Models & Orbits',
-    description: (
-      <>
-        Interactive 3D models of Mars’ moons for illustration. Models:{' '}
-        <em className="text-slate-300">NASA/JPL-Caltech</em> Science 3D Resources
-        (glTF) —{' '}
-        <a
-          href="https://science.nasa.gov/resource/phobos-mars-moon-3d-model/"
-          target="_blank"
-          rel="noreferrer"
-          className="text-cyan-300 underline underline-offset-2 hover:text-cyan-200"
-        >
-          Phobos
-        </a>{' '}&amp;{' '}
-        <a
-          href="https://science.nasa.gov/resource/deimos-mars-moon-3d-model/"
-          target="_blank"
-          rel="noreferrer"
-          className="text-cyan-300 underline underline-offset-2 hover:text-cyan-200"
-        >
-          Deimos
-        </a>
-        . Mean radii from Ernst et al. 2023. Real-time orbital elements synchronized
-        from{' '}
-        <em className="text-slate-300">NASA JPL Horizons</em> (MAR099 ephemerides;
-        Brozović, Jacobson &amp; Park 2025) when online, with published mean geometric
-        elements as offline fallback. Phobos ~6,000 km above the surface; Deimos
-        ~20,000 km (semi-major axes ~9,375 km and ~23,458 km from Mars center).
-      </>
-    ),
-  },
-  {
     title: 'Loading Screen Mars Image',
     description: (
       <>

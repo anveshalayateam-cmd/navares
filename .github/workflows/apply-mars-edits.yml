@@ -11,9 +11,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Add moon orbit lines
-        run: python3 scripts/add_moon_orbit_lines.py
+      - name: Apply patches
+        run: |
+          python3 scripts/apply_zoom_color_clouds.py
 
       - name: Commit and push
         run: |
@@ -23,6 +26,6 @@ jobs:
           if git diff --staged --quiet; then
             echo "No changes"
           else
-            git commit -m "Faint glowing orbital paths for Phobos and Deimos"
+            git commit -m "Min 10s loading; altitude sandy color blend; clouds fade on zoom-in"
             git push
           fi
