@@ -3394,25 +3394,25 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
 
       // Butterscotch-amber sky and ground atmosphere fade in only below 10 km.
       const atmVisible = t > 0.002;
-      const targetHueShift = Cesium.Math.lerp(0.0, -0.48, t);
-      const targetSaturationShift = Cesium.Math.lerp(0.0, 0.16, t);
-      const targetBrightnessShift = Cesium.Math.lerp(-1.0, -0.28, t);
-      const targetSkyLightIntensity = 145.0 * t;
-      const targetGlobeLightIntensity = 85.0 * t;
+      const targetHueShift = Cesium.Math.lerp(0.0, -0.42, t);
+      const targetSaturationShift = Cesium.Math.lerp(0.0, 0.26, t);
+      const targetBrightnessShift = Cesium.Math.lerp(-1.0, -0.18, t);
+      const targetSkyLightIntensity = 105.0 * t;
+      const targetGlobeLightIntensity = 120.0 * t;
       const skyAtmosphere = viewer.scene.skyAtmosphere;
       if (skyAtmosphere) {
         if (skyAtmosphere.show !== atmVisible) {
           skyAtmosphere.show = atmVisible;
         }
         if (
-          Math.abs(skyAtmosphere.hueShift - targetHueShift) > 0.001 ||
-          Math.abs(skyAtmosphere.saturationShift - targetSaturationShift) > 0.001 ||
-          Math.abs(skyAtmosphere.brightnessShift - targetBrightnessShift) > 0.001 ||
+          Math.abs(skyAtmosphere.hueShift - Cesium.Math.lerp(0.0, -0.22, t)) > 0.001 ||
+          Math.abs(skyAtmosphere.saturationShift - Cesium.Math.lerp(0.0, 0.035, t)) > 0.001 ||
+          Math.abs(skyAtmosphere.brightnessShift - Cesium.Math.lerp(-1.0, -0.38, t)) > 0.001 ||
           Math.abs((skyAtmosphere.atmosphereLightIntensity ?? 0) - targetSkyLightIntensity) > 0.05
         ) {
-          skyAtmosphere.hueShift = targetHueShift;
-          skyAtmosphere.saturationShift = targetSaturationShift;
-          skyAtmosphere.brightnessShift = targetBrightnessShift;
+          skyAtmosphere.hueShift = Cesium.Math.lerp(0.0, -0.22, t);
+          skyAtmosphere.saturationShift = Cesium.Math.lerp(0.0, 0.035, t);
+          skyAtmosphere.brightnessShift = Cesium.Math.lerp(-1.0, -0.38, t);
           skyAtmosphere.atmosphereLightIntensity = targetSkyLightIntensity;
         }
       }
@@ -3431,7 +3431,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
         viewer.scene.globe.atmosphereLightIntensity = targetGlobeLightIntensity;
       }
       if (viewer.scene.fog) {
-        const targetFogDensity = 0.0000045 * t;
+        const targetFogDensity = 0.0000055 * t;
         if (
           viewer.scene.fog.enabled !== atmVisible ||
           Math.abs((viewer.scene.fog.density ?? 0) - targetFogDensity) > 0.0000001
