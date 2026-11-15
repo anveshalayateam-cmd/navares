@@ -1,5 +1,5 @@
 import { Radio, Route, ShieldAlert, X } from 'lucide-react';
-import { formatLatLon, formatSurfaceElevation } from '../utils/marsMath';
+import { formatDistance, formatLatLon, formatSurfaceElevation } from '../utils/marsMath';
 import { RouteEndpoint, SurvivalRouteResult } from '../utils/marsPathfinder';
 
 interface SurvivalRouteOverlayProps {
@@ -20,9 +20,16 @@ export function SurvivalRouteOverlay({
   if (!routeMode && !routeResult) return null;
 
   const formatKm = (km: number) =>
-    km < 100
-      ? `${km.toFixed(1)} km`
-      : `${Math.round(km).toLocaleString('en-US')} km`;
+    km < 100 ? formatDistance(km * 1000) : `${Math.round(km).toLocaleString('en-US')} km`;
+
+  const coordDecimals =
+    routeResult && routeResult.directDistanceKm < 5
+      ? 5
+      : routeResult && routeResult.directDistanceKm < 50
+        ? 3
+        : 1;
+  const radDecimals = routeResult && routeResult.directDistanceKm < 5 ? 3 : 2;
+  const elevDecimals = routeResult && routeResult.directDistanceKm < 2 ? 1 : 0;
 
   return (
     <>
@@ -71,13 +78,13 @@ export function SurvivalRouteOverlay({
                 </h3>
                 <p className="truncate text-[11px] text-slate-400">
                   {routeResult.start.label ??
-                    formatLatLon(routeResult.start.latDeg, routeResult.start.lonDeg, 1)}{' '}
+                    formatLatLon(routeResult.start.latDeg, routeResult.start.lonDeg, coordDecimals)}{' '}
                   ➔{' '}
                   {routeResult.destination.label ??
                     formatLatLon(
                       routeResult.destination.latDeg,
                       routeResult.destination.lonDeg,
-                      1
+                      coordDecimals
                     )}
                 </p>
               </div>
@@ -115,11 +122,11 @@ export function SurvivalRouteOverlay({
                 <dt className="text-slate-400">Avg / Peak Radiation</dt>
                 <dd className="font-mono-tabular text-right">
                   <span className="font-medium text-[#00FF41]">
-                    {routeResult.avgRadiationMsVDay.toFixed(2)}
+                    {routeResult.avgRadiationMsVDay.toFixed(radDecimals)}
                   </span>
                   <span className="text-slate-400"> / </span>
                   <span className="font-medium text-emerald-300">
-                    {routeResult.peakRadiationMsVDay.toFixed(2)} mSv/day
+                    {routeResult.peakRadiationMsVDay.toFixed(radDecimals)} mSv/day
                   </span>
                 </dd>
               </div>
@@ -146,7 +153,7 @@ export function SurvivalRouteOverlay({
               <div className="flex items-baseline justify-between gap-2">
                 <dt className="text-slate-400">Max Elevation</dt>
                 <dd className="font-mono-tabular font-medium text-cyan-300">
-                  {formatSurfaceElevation(routeResult.maxElevationM)}
+                  {formatSurfaceElevation(routeResult.maxElevationM, elevDecimals)}
                 </dd>
               </div>
             </dl>
@@ -176,9 +183,11 @@ export function SurvivalRouteOverlay({
                           {enc.target.name}
                         </span>
                         <span className="shrink-0 font-mono-tabular text-[11px] text-orange-300">
-                          {enc.closestKm < 15
+                          {enc.closestKm < 0.1
                             ? 'Direct Pass'
-                            : `${Math.round(enc.closestKm)} km pass`}
+                            : enc.closestKm < 1
+                              ? `${formatDistance(enc.closestKm * 1000)} pass`
+                              : `${Math.round(enc.closestKm)} km pass`}
                           {enc.detourKm > 2 ? ` (+${enc.detourKm} km)` : ''}
                         </span>
                       </div>

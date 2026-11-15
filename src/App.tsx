@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CameraTelemetry, CursorTelemetry, CursorTelemetryPill } from './components/CursorTelemetryPill';
+import { DropPinOverlay, DroppedPinCandidate } from './components/DropPinOverlay';
 import { InfoMenu } from './components/InfoMenu';
 import { LeftMarginControls } from './components/LeftMarginControls';
 import { MapStyleBar, MapStyleMode } from './components/MapStyleBar';
@@ -15,9 +16,21 @@ import {
 } from './components/MeasureToolOverlay';
 import { NavControls } from './components/NavControls';
 import { SearchBar } from './components/SearchBar';
+import { LiveSiteRectPreview, SiteAnalysisOverlay } from './components/SiteAnalysisOverlay';
 import { SurvivalRouteOverlay } from './components/SurvivalRouteOverlay';
 import { TargetInfoCard } from './components/TargetInfoCard';
 import { MarsTarget, TelemetryMode } from './data/marsData';
+import { formatLatLon, formatSurfaceElevation } from './utils/marsMath';
+import {
+  computeSurfaceRadiationDoseFromElev,
+  formatMarsSurfaceTempC,
+  getMarsSurfaceTempC,
+} from './utils/marsOverlayMaps';
+import {
+  SiteBounds,
+  analyzeMarsSiteRectangle,
+  sampleMarsWaterAvailability,
+} from './utils/marsWaterModel';
 import {
   LiveOrbiterElements,
   loadCachedOrbiterElements,
@@ -76,6 +89,22 @@ export default function App() {
   const [routeMode, setRouteMode] = useState<boolean>(false);
   const [routeStart, setRouteStart] = useState<RouteEndpoint | null>(null);
   const [routeResult, setRouteResult] = useState<SurvivalRouteResult | null>(null);
+
+  // Drop Temporary Session Pin state
+  const [dropPinMode, setDropPinMode] = useState<boolean>(false);
+  const [pendingDropPoint, setPendingDropPoint] = useState<DroppedPinCandidate | null>(null);
+  const [customPins, setCustomPins] = useState<MarsTarget[]>([]);
+
+  // Rectangular Site Habitability Analysis state
+  const [siteAnalysisMode, setSiteAnalysisMode] = useState<boolean>(false);
+  const [siteHasCornerA, setSiteHasCornerA] = useState<boolean>(false);
+  const [siteLivePreview, setSiteLivePreview] = useState<LiveSiteRectPreview | null>(null);
+  const [siteBounds, setSiteBounds] = useState<SiteBounds | null>(null);
+
+  const siteAnalysisResult = useMemo(
+    () => (siteBounds ? analyzeMarsSiteRectangle(siteBounds, temperatureLs) : null),
+    [siteBounds, temperatureLs]
+  );
 
   // Fetch NASA MSL REMS surface weather when Weather overlay is toggled ON
   useEffect(() => {
@@ -152,7 +181,12 @@ export default function App() {
       const next = !prev;
       if (next) {
         globeRef.current?.clearSurvivalRoute();
+        globeRef.current?.clearSiteSelection();
         setRouteMode(false);
+        setDropPinMode(false);
+        setPendingDropPoint(null);
+        setSiteAnalysisMode(false);
+        setSiteBounds(null);
       }
       return next;
     });
@@ -163,10 +197,119 @@ export default function App() {
       const next = !prev;
       if (next) {
         globeRef.current?.clearMeasurement();
+        globeRef.current?.clearSiteSelection();
         setMeasureMode(false);
+        setDropPinMode(false);
+        setPendingDropPoint(null);
+        setSiteAnalysisMode(false);
+        setSiteBounds(null);
       }
       return next;
     });
+  }, []);
+
+  const handleToggleDropPin = useCallback(() => {
+    setDropPinMode((prev) => {
+      const next = !prev;
+      setPendingDropPoint(null);
+      if (next) {
+        globeRef.current?.clearMeasurement();
+        globeRef.current?.clearSurvivalRoute();
+        globeRef.current?.clearSiteSelection();
+        setMeasureMode(false);
+        setRouteMode(false);
+        setSiteAnalysisMode(false);
+        setSiteBounds(null);
+      }
+      return next;
+    });
+  }, []);
+
+  const handleToggleSiteAnalysis = useCallback(() => {
+    setSiteAnalysisMode((prev) => {
+      const next = !prev;
+      if (next) {
+        globeRef.current?.clearMeasurement();
+        globeRef.current?.clearSurvivalRoute();
+        globeRef.current?.clearSiteSelection();
+        setMeasureMode(false);
+        setRouteMode(false);
+        setDropPinMode(false);
+        setPendingDropPoint(null);
+        setSiteBounds(null);
+      } else if (!siteBounds) {
+        globeRef.current?.clearSiteSelection();
+      }
+      return next;
+    });
+  }, [siteBounds]);
+
+  const handleConfirmCustomPin = useCallback(
+    (name: string) => {
+      if (!pendingDropPoint) return;
+      const { latDeg, lonDeg, elevMeters } = pendingDropPoint;
+      const dose = computeSurfaceRadiationDoseFromElev(elevMeters);
+      const radSeverity: MarsTarget['radiationSeverity'] =
+        dose >= 0.78 ? 'critical' : dose >= 0.55 ? 'moderate' : 'sheltered';
+      const tesTemp = getMarsSurfaceTempC(latDeg, lonDeg, temperatureLs);
+      const water = sampleMarsWaterAvailability(latDeg, lonDeg);
+      const id = `__custom-pin-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+      const shortName = name.length > 22 ? `${name.slice(0, 20).trim()}…` : name;
+
+      const created: MarsTarget = {
+        id,
+        name,
+        shortName,
+        category: 'landmark',
+        region: 'Custom Session Location',
+        latitude: latDeg,
+        longitude: lonDeg,
+        elevationLabel: `${formatSurfaceElevation(elevMeters)} (MOLA Model)`,
+        elevationMeters: elevMeters,
+        surfaceRadiation: `${dose.toFixed(2)} mSv/day · ${radSeverity === 'critical' ? 'High Exposure' : radSeverity === 'moderate' ? 'Moderate' : 'Sheltered'}`,
+        radiationSeverity: radSeverity,
+        surfaceTempRange:
+          tesTemp !== null ? `${formatMarsSurfaceTempC(tesTemp)} daytime TES` : 'Outside TES coverage',
+        missionStatus: 'Temporary Session Pin',
+        agency: 'User Waypoint',
+        epochOrSol: formatLatLon(latDeg, lonDeg, 2),
+        scientificSignificance: `Session-only waypoint pinned at ${formatLatLon(latDeg, lonDeg, 3)}. NASA Odyssey surface hydration reads ${water.waterWtPct.toFixed(2)} wt% (${water.source}; ${water.tier}).`,
+        searchKeywords: `custom pin session waypoint ${name}`,
+        photoUrl: '',
+        photoCaption: `Procedural Martian Surface View · ${name}`,
+        survivalNotes: {
+          slopeSteepness: 'Inspect local contour relief with Measure / Analyse Site tools',
+          dustRisk: 'Seasonal Martian airborne dust varies with solar longitude (Ls)',
+          radiationLevel: `${dose.toFixed(2)} mSv/day (~${Math.round(dose * 365.25)} mSv/yr)`,
+          thermalRange: formatMarsSurfaceTempC(tesTemp),
+          astronautAdvisory: `Hydration potential: ${water.waterWtPct.toFixed(2)} wt% H2O (${water.tier}). Temporary pin clears when the browser session ends.`,
+        },
+        isCustomPin: true,
+      };
+
+      setCustomPins((prev) => [created, ...prev]);
+      setPendingDropPoint(null);
+      setDropPinMode(false);
+      setSelectedTarget(created);
+    },
+    [pendingDropPoint, temperatureLs]
+  );
+
+  const handleDeleteCustomPin = useCallback((pinId: string) => {
+    setCustomPins((prev) => prev.filter((p) => p.id !== pinId));
+    setSelectedTarget((prev) => (prev?.id === pinId ? null : prev));
+  }, []);
+
+  const handleReselectSiteArea = useCallback(() => {
+    globeRef.current?.clearSiteSelection();
+    setSiteBounds(null);
+    setSiteAnalysisMode(true);
+  }, []);
+
+  const handleCloseSiteAnalysis = useCallback(() => {
+    globeRef.current?.clearSiteSelection();
+    setSiteBounds(null);
+    setSiteAnalysisMode(false);
   }, []);
 
   const handleClearSurvivalRoute = useCallback(() => {
@@ -185,14 +328,22 @@ export default function App() {
   const handleStopZoom = useCallback(() => globeRef.current?.stopZoom(), []);
   const handleWheelZoom = useCallback((deltaY: number) => globeRef.current?.wheelZoom(deltaY), []);
 
-  // Keyboard shortcuts: Escape exits Measure/Route Mode or closes Knowledge Card, R resets globe
+  // Keyboard shortcuts: Escape exits active tools or closes Knowledge Card, R resets globe
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
         return;
       }
       if (e.key === 'Escape') {
-        if (measureMode) {
+        if (pendingDropPoint) {
+          setPendingDropPoint(null);
+        } else if (dropPinMode) {
+          setDropPinMode(false);
+        } else if (siteAnalysisMode || siteBounds) {
+          globeRef.current?.clearSiteSelection();
+          setSiteBounds(null);
+          setSiteAnalysisMode(false);
+        } else if (measureMode) {
           globeRef.current?.clearMeasurement();
           setMeasureMode(false);
         } else if (routeMode) {
@@ -209,7 +360,7 @@ export default function App() {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [measureMode, routeMode, routeResult]);
+  }, [measureMode, routeMode, routeResult, dropPinMode, pendingDropPoint, siteAnalysisMode, siteBounds]);
 
   return (
     <main className="relative h-screen w-screen overflow-hidden bg-black text-slate-100">
@@ -225,6 +376,9 @@ export default function App() {
         weatherEnabled={weatherEnabled}
         measureMode={measureMode}
         routeMode={routeMode}
+        dropPinMode={dropPinMode}
+        siteAnalysisMode={siteAnalysisMode}
+        customPins={customPins}
         showSatellites={showSatellites}
         showRovers={showRovers}
         liveRovers={liveRovers}
@@ -239,10 +393,42 @@ export default function App() {
         onMeasureResultChange={setMeasureResult}
         onRouteStartChange={setRouteStart}
         onRouteResultChange={setRouteResult}
+        onDropPinPoint={setPendingDropPoint}
+        onSiteRectHasCornerAChange={setSiteHasCornerA}
+        onSiteRectLivePreviewChange={setSiteLivePreview}
+        onSiteRectComplete={setSiteBounds}
       />
 
       {/* Control 1: Top-Left Floating Search & Quick-Jump Pill */}
-      <SearchBar onSelectAndFly={handleSearchSelectAndFly} liveRovers={liveRovers} />
+      <SearchBar
+        onSelectAndFly={handleSearchSelectAndFly}
+        liveRovers={liveRovers}
+        customPins={customPins}
+      />
+
+      {/* Temporary Session Pin Prompt & Naming Modal */}
+      <DropPinOverlay
+        dropPinMode={dropPinMode}
+        pendingPoint={pendingDropPoint}
+        temperatureLs={temperatureLs}
+        defaultPinNumber={customPins.length + 1}
+        onConfirmPin={handleConfirmCustomPin}
+        onCancelPending={() => setPendingDropPoint(null)}
+        onExitDropPinMode={() => {
+          setPendingDropPoint(null);
+          setDropPinMode(false);
+        }}
+      />
+
+      {/* Rectangular Site Habitability Analysis Banner & Telemetry Card */}
+      <SiteAnalysisOverlay
+        siteAnalysisMode={siteAnalysisMode}
+        hasFirstCorner={siteHasCornerA}
+        livePreview={siteLivePreview}
+        result={siteAnalysisResult}
+        onReselectArea={handleReselectSiteArea}
+        onCloseAnalysis={handleCloseSiteAnalysis}
+      />
 
       {/* Geodesic Measure Tool Banner, Live Distance Tooltip & Result Card */}
       <MeasureToolOverlay
@@ -290,7 +476,7 @@ export default function App() {
       {/* Bottom-Left Real-Time Cursor Surface Coordinates & Elevation Telemetry Pill */}
       <CursorTelemetryPill telemetry={cursorTelemetry} cameraTelemetry={cameraTelemetry} />
 
-      {/* Control 2: Bottom-Center Google Earth-Style Map Style Switcher & Weather Toggle */}
+      {/* Control 2: Bottom-Center Google Earth-Style Map Style Switcher, Weather & Analyse Site */}
       <MapStyleBar
         mapStyle={mapStyle}
         onChangeMapStyle={setMapStyle}
@@ -298,8 +484,12 @@ export default function App() {
         onTemperatureLsChange={setTemperatureLs}
         gridEnabled={gridEnabled}
         onToggleGrid={() => setGridEnabled((enabled) => !enabled)}
+        dropPinMode={dropPinMode}
+        onToggleDropPin={handleToggleDropPin}
         weatherEnabled={weatherEnabled}
         onToggleWeather={() => setWeatherEnabled((prev) => !prev)}
+        siteAnalysisMode={siteAnalysisMode}
+        onToggleSiteAnalysis={handleToggleSiteAnalysis}
       />
 
       {/* Control 3: Bottom-Right Compact Navigation Controls (Route, Measure, Compass, Globe Reset, +, -) */}
@@ -338,6 +528,7 @@ export default function App() {
           telemetryMode={telemetryMode}
           onChangeTelemetryMode={setTelemetryMode}
           onZoomToSurface={handleZoomToSurface}
+          onDeleteCustomPin={handleDeleteCustomPin}
           onClose={() => setSelectedTarget(null)}
         />
       )}

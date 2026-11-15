@@ -9,6 +9,7 @@ export interface CesiumEntity {
   billboard?: unknown;
   label?: unknown;
   polyline?: unknown;
+  polygon?: unknown;
   ellipse?: unknown;
   point?: unknown;
   show: boolean;
@@ -18,6 +19,7 @@ export interface CesiumEntity {
 export interface CesiumImageryLayer {
   show: boolean;
   alpha: number;
+  hue?: number;
   contrast: number;
   brightness: number;
   gamma: number;
@@ -65,11 +67,16 @@ export interface CesiumViewer {
       atmosphereRayleighScaleHeight?: number;
       atmosphereMieScaleHeight?: number;
       depthTestAgainstTerrain: boolean;
+      getHeight?: (cartographic: unknown) => number | undefined;
       pick: (ray: unknown, scene: unknown) => unknown;
       material?: unknown;
       tileLoadProgressEvent: {
         addEventListener: (cb: (queued: number) => void) => () => void;
       };
+    };
+    primitives: {
+      add: (primitive: unknown) => unknown;
+      remove: (primitive: unknown) => boolean;
     };
     skyAtmosphere: {
       show?: boolean;
@@ -83,6 +90,9 @@ export interface CesiumViewer {
     };
     fog?: {
       enabled: boolean;
+      density?: number;
+      minimumBrightness?: number;
+      screenSpaceErrorFactor?: number;
     };
     screenSpaceCameraController: {
       enableCollisionDetection: boolean;

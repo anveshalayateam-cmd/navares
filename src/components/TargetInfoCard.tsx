@@ -1,4 +1,4 @@
-import { CloudSun, Crosshair, Radio, Satellite, X } from 'lucide-react';
+import { CloudSun, Crosshair, Radio, Satellite, Trash2, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { CATEGORY_COLORS, CATEGORY_LABELS, MarsTarget, TelemetryMode } from '../data/marsData';
 import { LiveOrbiterElements } from '../services/marsOrbiterSync';
@@ -23,6 +23,7 @@ interface TargetInfoCardProps {
   telemetryMode: TelemetryMode;
   onChangeTelemetryMode: (mode: TelemetryMode) => void;
   onZoomToSurface: (target: MarsTarget) => void;
+  onDeleteCustomPin?: (pinId: string) => void;
   onClose: () => void;
 }
 
@@ -37,13 +38,16 @@ export function TargetInfoCard({
   telemetryMode,
   onChangeTelemetryMode,
   onZoomToSurface,
+  onDeleteCustomPin,
   onClose,
 }: TargetInfoCardProps) {
-  const [imgSrc, setImgSrc] = useState<string>(target.photoUrl);
+  const [imgSrc, setImgSrc] = useState<string>(
+    () => target.photoUrl || createTargetPhotoFallback(target)
+  );
 
   useEffect(() => {
-    setImgSrc(target.photoUrl);
-  }, [target.id, target.photoUrl]);
+    setImgSrc(target.photoUrl || createTargetPhotoFallback(target));
+  }, [target]);
 
   const categoryColor = CATEGORY_COLORS[target.category];
   const displayLat =
@@ -318,15 +322,27 @@ export function TargetInfoCard({
       </div>
 
       {/* Prominent Zoom to Surface / Inspect Spacecraft Action */}
-      <div className="border-t border-white/10 p-3.5 bg-black/25">
+      <div className="border-t border-white/10 p-3.5 bg-black/25 flex items-center gap-2">
         <button
           type="button"
           onClick={() => onZoomToSurface(target)}
-          className="flex w-full items-center justify-center gap-2 rounded-full bg-orange-500 px-4 py-2.5 text-xs font-semibold text-slate-950 transition-colors duration-150 hover:bg-orange-400 cursor-pointer whitespace-nowrap"
+          className="flex flex-1 items-center justify-center gap-2 rounded-full bg-orange-500 px-4 py-2.5 text-xs font-semibold text-slate-950 transition-colors duration-150 hover:bg-orange-400 cursor-pointer whitespace-nowrap"
         >
           <Crosshair className="h-3.5 w-3.5" aria-hidden="true" />
           <span>{target.category === 'satellite' ? 'Inspect Spacecraft' : 'Zoom to Surface'}</span>
         </button>
+        {target.isCustomPin && onDeleteCustomPin && (
+          <button
+            type="button"
+            onClick={() => onDeleteCustomPin(target.id)}
+            aria-label="Remove temporary session pin"
+            title="Remove session pin"
+            className="flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-full border border-rose-400/35 bg-rose-500/12 px-3 text-xs font-medium text-rose-200 transition-colors hover:bg-rose-500/25 hover:text-white cursor-pointer whitespace-nowrap"
+          >
+            <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+            <span>Remove</span>
+          </button>
+        )}
       </div>
     </aside>
   );

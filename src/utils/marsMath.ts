@@ -1928,20 +1928,30 @@ export function createTargetPhotoFallback(target: MarsTarget): string {
 }
 
 /**
- * Formats Martian surface elevation in meters (e.g., "+21,229 m" or "-4,500 m").
+ * Formats Martian surface elevation in meters (e.g., "+21,229 m", "-4,500 m", or "+12.4 m").
  */
-export function formatSurfaceElevation(meters: number): string {
-  const rounded = Math.round(meters);
+export function formatSurfaceElevation(meters: number, decimals = 0): string {
+  const factor = 10 ** decimals;
+  const rounded = Math.round(meters * factor) / factor;
   const sign = rounded >= 0 ? '+' : '-';
-  return `${sign}${Math.abs(rounded).toLocaleString('en-US')} m`;
+  return `${sign}${Math.abs(rounded).toLocaleString('en-US', {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  })} m`;
 }
 
 /**
- * Formats geodesic surface distance cleanly in meters (< 1 km) or kilometers.
+ * Formats geodesic surface distance cleanly with sub-meter precision under 1 km.
  */
 export function formatDistance(meters: number): string {
+  if (meters < 10) {
+    return `${meters.toFixed(2)} m`;
+  }
   if (meters < 1000) {
-    return `${Math.round(meters).toLocaleString('en-US')} m`;
+    return `${meters.toFixed(1)} m`;
+  }
+  if (meters < 10000) {
+    return `${(meters / 1000).toFixed(3)} km`;
   }
   if (meters < 100000) {
     return `${(meters / 1000).toFixed(2)} km`;
@@ -1955,9 +1965,13 @@ export function formatDistance(meters: number): string {
  */
 export function formatTraverseTimes(meters: number): { roboticRover: string; evaRover: string } {
   const formatDurationHours = (hours: number): string => {
+    const totalSeconds = hours * 3600;
+    if (totalSeconds < 60) {
+      return `${Math.max(1, Math.round(totalSeconds))} sec`;
+    }
     if (hours < 1) {
-      const mins = Math.max(1, Math.round(hours * 60));
-      return `${mins} min`;
+      const mins = hours * 60;
+      return mins < 10 ? `${mins.toFixed(1)} min` : `${Math.round(mins)} min`;
     }
     if (hours < 48) {
       return `${hours.toFixed(1)} hrs`;

@@ -38,6 +38,16 @@ export function MeasureToolOverlay({
   if (!measureMode) return null;
 
   const traverse = result ? formatTraverseTimes(result.surfaceDistanceMeters) : null;
+  const elevDecimals =
+    result && result.surfaceDistanceMeters < 1000
+      ? Math.abs(result.elevationDeltaMeters) < 10
+        ? 2
+        : 1
+      : 0;
+  const slopePercent =
+    result && result.surfaceDistanceMeters > 0.05
+      ? (Math.abs(result.elevationDeltaMeters) / result.surfaceDistanceMeters) * 100
+      : 0;
 
   return (
     <>
@@ -109,7 +119,13 @@ export function MeasureToolOverlay({
             <div className="flex items-baseline justify-between gap-2">
               <dt className="text-slate-400">Elevation Delta (Δh)</dt>
               <dd className="font-mono-tabular font-medium text-amber-300">
-                {formatSurfaceElevation(result.elevationDeltaMeters)}
+                {formatSurfaceElevation(result.elevationDeltaMeters, elevDecimals)}
+              </dd>
+            </div>
+            <div className="flex items-baseline justify-between gap-2">
+              <dt className="text-slate-400">Mean Slope Grade</dt>
+              <dd className="font-mono-tabular font-medium text-slate-200">
+                {slopePercent.toFixed(1)}%
               </dd>
             </div>
             <div className="border-t border-white/10 pt-2 space-y-1.5">

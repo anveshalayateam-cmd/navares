@@ -22,6 +22,21 @@ const DATA_ATTRIBUTIONS = [
     ),
   },
   {
+    title: 'Martian Atmospheric Cloud Layer (AI-Generated Procedural)',
+    description: (
+      <>
+        Global translucent water-ice and aerosol cloud veil visible above{' '}
+        <span className="font-mono-tabular text-slate-200">7,000 km</span> — invisible straight-on
+        while emerging smoothly along planetary edges and horizons — is procedurally generated with
+        AI assistance, inspired by orbital photography from{' '}
+        <em className="text-slate-300">
+          ESA Rosetta OSIRIS, ESA Mars Express (VMC/HRSC) &amp; NASA MRO (MARCI)
+        </em>
+        .
+      </>
+    ),
+  },
+  {
     title: 'MGS Crustal Magnetic Field & MOLA Topography',
     description: (
       <>
@@ -37,6 +52,30 @@ const DATA_ATTRIBUTIONS = [
       <>
         Radar, neutron, and thermal-inertia mapping of shallow buried Martian water-ice sheets —{' '}
         <em className="text-slate-300">Planetary Science Institute / NASA JPL</em>.
+      </>
+    ),
+  },
+  {
+    title: 'NASA 2001 Mars Odyssey Water & Hydrogen Distribution (GRS / NS)',
+    description: (
+      <>
+        Site habitability water-availability evaluation uses official calibrated 5°×5° smoothed
+        Gamma-Ray Spectrometer <span className="font-mono-tabular text-slate-200">H₂O</span>{' '}
+        concentrations (wt% &amp; 1σ uncertainties) from{' '}
+        <span className="font-mono-tabular text-slate-200">ODY-M-GRS-5-ELEMENTS-V1.0</span>{' '}
+        (Boynton et al., <em>J. Geophys. Res.</em> 2007,{' '}
+        <a
+          href="https://doi.org/10.1029/2007JE002887"
+          target="_blank"
+          rel="noreferrer"
+          className="text-cyan-300 underline underline-offset-2 hover:text-cyan-200"
+        >
+          doi:10.1029/2007JE002887
+        </a>
+        ) paired with Odyssey Neutron Spectrometer epithermal neutron flux (
+        <span className="font-mono-tabular text-slate-200">urn:nasa:pds:odyssey_grs_special</span>,
+        Feldman et al., <em>Science</em> 2002) for global and polar Water-Equivalent Hydrogen (WEH)
+        mapping — <em className="text-slate-300">NASA PDS Geosciences Node / Washington Univ. in St. Louis</em>.
       </>
     ),
   },

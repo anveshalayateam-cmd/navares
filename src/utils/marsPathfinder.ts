@@ -5,7 +5,11 @@ import {
   getMarsElevation,
 } from '../data/marsData';
 import { sampleSatelliteOrbitArc } from './marsMath';
-import { computeSurfaceRadiationDose, getMarsSurfaceTempC } from './marsOverlayMaps';
+import {
+  computeSurfaceRadiationDose,
+  computeSurfaceRadiationDoseFromElev,
+  getMarsSurfaceTempC,
+} from './marsOverlayMaps';
 
 const MARS_RADIUS_KM = MARS_CONSTANTS.EQUATORIAL_RADIUS / 1000;
 const DEG_TO_RAD = Math.PI / 180;
@@ -256,9 +260,10 @@ export function computeOptimalSurvivalRoute(
   solarLongitudeLs = 0
 ): SurvivalRouteResult {
   const directDistanceKm = Math.max(
-    1,
+    1e-6,
     marsGeodesicKm(start.latDeg, start.lonDeg, destination.latDeg, destination.lonDeg)
   );
+  const terrainDetailLevel = directDistanceKm < 5 ? 11 : directDistanceKm < 80 ? 8 : 4;
   const directArcPoints = sampleGreatCircleArc(
     start.latDeg,
     start.lonDeg,
@@ -270,7 +275,8 @@ export function computeOptimalSurvivalRoute(
   // Sample direct path peak radiation for safety comparison
   let directPeakRad = 0;
   for (const pt of directArcPoints) {
-    const rad = computeSurfaceRadiationDose(pt.lonDeg, pt.latDeg);
+    const ptElev = getMarsElevation(pt.latDeg, pt.lonDeg, terrainDetailLevel);
+    const rad = computeSurfaceRadiationDoseFromElev(ptElev);
     if (rad > directPeakRad) directPeakRad = rad;
   }
 
@@ -281,7 +287,7 @@ export function computeOptimalSurvivalRoute(
   const roverSigma2 = 2 * roverSigmaKm * roverSigmaKm;
   const orbiterSigma2 = 2 * 180 * 180;
 
-  // Choose adaptive local grid for regional traverses (<3,200 km) or global wrap-around 2° grid
+  // Choose adaptive local grid for regional/micro traverses (<3,200 km, down to <10 m cells) or global 2° grid
   const isGlobal = directDistanceKm >= 3200;
 
   let rows: number;
@@ -307,11 +313,21 @@ export function computeOptimalSurvivalRoute(
     const dLonSigned = wrapLonDiffDeg(destination.lonDeg, start.lonDeg);
     const midLon = wrapLongitudeDeg(start.lonDeg + dLonSigned * 0.5);
 
-    const halfLatSpan = clamp(Math.abs(destination.latDeg - start.latDeg) * 0.72 + 12, 12, 75);
-    const cosMid = Math.max(0.25, Math.cos(midLat * DEG_TO_RAD));
+    const directDeg = (directDistanceKm / MARS_RADIUS_KM) * RAD_TO_DEG;
+    const cosMid = Math.max(0.18, Math.cos(midLat * DEG_TO_RAD));
+    const minHalfLatDeg = Math.max(directDeg * 0.85, 0.00025);
+    const minHalfLonDeg = minHalfLatDeg / cosMid;
+    const marginLatDeg = clamp(directDeg * 0.6, 0.0002, 10);
+    const marginLonDeg = clamp((directDeg * 0.6) / cosMid, 0.0002 / cosMid, 14);
+
+    const halfLatSpan = clamp(
+      Math.abs(destination.latDeg - start.latDeg) * 0.75 + marginLatDeg,
+      minHalfLatDeg,
+      75
+    );
     const halfLonSpan = clamp(
-      Math.abs(dLonSigned) * 0.72 + 14 / cosMid,
-      14,
+      Math.abs(dLonSigned) * 0.75 + marginLonDeg,
+      minHalfLonDeg,
       172
     );
 
@@ -337,8 +353,8 @@ export function computeOptimalSurvivalRoute(
     if (existing) return existing;
 
     const { latDeg, lonDeg } = getNodeCoords(row, col);
-    const elev = getMarsElevation(latDeg, lonDeg);
-    const rad = computeSurfaceRadiationDose(lonDeg, latDeg);
+    const elev = getMarsElevation(latDeg, lonDeg, terrainDetailLevel);
+    const rad = computeSurfaceRadiationDoseFromElev(elev);
     const temp = getMarsSurfaceTempC(latDeg, lonDeg, solarLongitudeLs);
 
     // 1. Minimum Radiation (+weight)
@@ -350,9 +366,9 @@ export function computeOptimalSurvivalRoute(
     const coldNorm = temp === null ? 0.5 : clamp((12 - temp) / 137, 0, 1);
     const tempPenalty = 1.05 * coldNorm;
 
-    // 3. Minimum Elevation (+weight)
+    // 3. Minimum Elevation (+weight, amplified locally at micro-scales so routes hug low ground)
     const elevNorm = clamp((elev + 5000) / 26000, 0, 1);
-    const elevPenalty = 1.5 * elevNorm;
+    const elevPenalty = (directDistanceKm < 10 ? 2.6 : 1.5) * elevNorm;
 
     // 4. Attractive pull toward Rovers (3.0x priority) & Orbiter ground-tracks (1.0x priority)
     let bestRoverAff = 0;
@@ -464,11 +480,11 @@ export function computeOptimalSurvivalRoute(
 
       const nextNode = evaluateNode(nIdx, nRow, nCol);
       const stepKm = Math.max(
-        0.5,
+        1e-6,
         marsGeodesicKm(currNode.latDeg, currNode.lonDeg, nextNode.latDeg, nextNode.lonDeg)
       );
 
-      // Uphill climb penalty between adjacent grid cells
+      // Uphill climb penalty between adjacent grid cells (scale-invariant down to sub-meter steps)
       const climbM = Math.max(0, nextNode.elev - currNode.elev);
       const slopePenalty = clamp(climbM / (stepKm * 120), 0, 1.4);
       const avgWeight = 0.5 * (currNode.baseWeight + nextNode.baseWeight) + 0.65 * slopePenalty;
@@ -527,8 +543,10 @@ export function computeOptimalSurvivalRoute(
       const smoothLat = 0.25 * prev.latDeg + 0.5 * curr.latDeg + 0.25 * next.latDeg;
       const smoothLon = wrapLongitudeDeg(curr.lonDeg + 0.25 * (dPrev + dNext));
 
-      const origRad = computeSurfaceRadiationDose(curr.lonDeg, curr.latDeg);
-      const smoothRad = computeSurfaceRadiationDose(smoothLon, smoothLat);
+      const origElev = getMarsElevation(curr.latDeg, curr.lonDeg, terrainDetailLevel);
+      const smoothElev = getMarsElevation(smoothLat, smoothLon, terrainDetailLevel);
+      const origRad = computeSurfaceRadiationDoseFromElev(origElev);
+      const smoothRad = computeSurfaceRadiationDoseFromElev(smoothElev);
       if (smoothRad <= origRad * 1.12) {
         nextPts.push({ latDeg: smoothLat, lonDeg: smoothLon });
       } else {
@@ -540,13 +558,16 @@ export function computeOptimalSurvivalRoute(
   }
 
   // Sample metrics along the optimal path
-  const waypoints: RouteWaypoint[] = rawLatLons.map((pt) => ({
-    latDeg: pt.latDeg,
-    lonDeg: pt.lonDeg,
-    elevMeters: getMarsElevation(pt.latDeg, pt.lonDeg),
-    radDose: computeSurfaceRadiationDose(pt.lonDeg, pt.latDeg),
-    tempC: getMarsSurfaceTempC(pt.latDeg, pt.lonDeg, solarLongitudeLs),
-  }));
+  const waypoints: RouteWaypoint[] = rawLatLons.map((pt) => {
+    const elevMeters = getMarsElevation(pt.latDeg, pt.lonDeg, terrainDetailLevel);
+    return {
+      latDeg: pt.latDeg,
+      lonDeg: pt.lonDeg,
+      elevMeters,
+      radDose: computeSurfaceRadiationDoseFromElev(elevMeters),
+      tempC: getMarsSurfaceTempC(pt.latDeg, pt.lonDeg, solarLongitudeLs),
+    };
+  });
 
   let optimalDistanceKm = 0;
   let weightedRadSum = 0;
@@ -564,7 +585,9 @@ export function computeOptimalSurvivalRoute(
 
     if (i > 0) {
       const prev = waypoints[i - 1];
-      const segKm = marsGeodesicKm(prev.latDeg, prev.lonDeg, wp.latDeg, wp.lonDeg);
+      const horizKm = marsGeodesicKm(prev.latDeg, prev.lonDeg, wp.latDeg, wp.lonDeg);
+      const dElevKm = (wp.elevMeters - prev.elevMeters) / 1000;
+      const segKm = Math.hypot(horizKm, dElevKm);
       optimalDistanceKm += segKm;
       weightedRadSum += segKm * 0.5 * (prev.radDose + wp.radDose);
       if (prev.tempC !== null && wp.tempC !== null) {
@@ -574,7 +597,7 @@ export function computeOptimalSurvivalRoute(
     }
   }
 
-  const safeDist = Math.max(1, optimalDistanceKm);
+  const safeDist = Math.max(1e-6, optimalDistanceKm);
   const avgRadiationMsVDay = weightedRadSum / safeDist;
   const meanTempC = measuredTempDistanceKm > 0 ? weightedTempSum / measuredTempDistanceKm : null;
   const detourPercent = ((optimalDistanceKm - directDistanceKm) / directDistanceKm) * 100;

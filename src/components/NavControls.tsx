@@ -144,6 +144,7 @@ export function NavControls({
       className="pointer-events-auto fixed bottom-14 right-4 z-20 flex flex-col items-end gap-2"
     >
       <div className="flex flex-col items-end gap-2">
+
         <button
           type="button"
           aria-pressed={routeMode}

@@ -22,9 +22,10 @@ const SEARCH_TABS: Array<{ id: SearchCategoryFilter; label: string }> = [
 interface SearchBarProps {
   onSelectAndFly: (target: MarsTarget) => void;
   liveRovers?: Record<string, RoverTelemetryFix>;
+  customPins?: MarsTarget[];
 }
 
-export function SearchBar({ onSelectAndFly, liveRovers }: SearchBarProps) {
+export function SearchBar({ onSelectAndFly, liveRovers, customPins = [] }: SearchBarProps) {
   const [query, setQuery] = useState('');
   const [activeTab, setActiveTab] = useState<SearchCategoryFilter>('all');
   const [isOpen, setIsOpen] = useState(false);
@@ -32,15 +33,16 @@ export function SearchBar({ onSelectAndFly, liveRovers }: SearchBarProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   const normalized = query.trim().toLowerCase();
+  const allTargets = useMemo(() => [...customPins, ...MARS_TARGETS], [customPins]);
 
   const textFiltered = useMemo(() => {
-    if (!normalized) return MARS_TARGETS;
-    return MARS_TARGETS.filter((t) => {
+    if (!normalized) return allTargets;
+    return allTargets.filter((t) => {
       const haystack =
         `${t.name} ${t.shortName} ${t.region} ${t.agency} ${CATEGORY_LABELS[t.category]} ${t.searchKeywords ?? ''} ${t.scientificSignificance}`.toLowerCase();
       return haystack.includes(normalized);
     });
-  }, [normalized]);
+  }, [allTargets, normalized]);
 
   const tabCounts = useMemo(() => {
     const counts: Record<SearchCategoryFilter, number> = {
@@ -113,7 +115,7 @@ export function SearchBar({ onSelectAndFly, liveRovers }: SearchBarProps) {
               inputRef.current?.blur();
             }
           }}
-          placeholder={`Search ${MARS_TARGETS.length} Mars locations, rovers, orbiters...`}
+          placeholder={`Search ${allTargets.length} Mars locations, rovers, orbiters...`}
           aria-label="Search Mars locations, rovers, orbiters"
           className="w-full bg-transparent text-xs sm:text-[13px] text-slate-100 placeholder:text-slate-400 focus:outline-none"
         />
