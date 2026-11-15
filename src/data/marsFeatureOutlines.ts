@@ -3420,199 +3420,7 @@ export const MARS_FEATURE_OUTLINES = {
       ]
     ]
   },
-  "arsia-lava-cave": {
-    "featureId": 394,
-    "name": "Arsia Mons",
-    "sourceUrl": "https://planetarynames.wr.usgs.gov/Feature/394",
-    "sourceCoordinateSystem": "Planetocentric latitude, east longitude 0–360° (converted to Cesium east longitude −180°..180°)",
-    "boundaryCaveat": "USGS/IAU Gazetteer named-feature footprint; boundaries are approximate named-feature extents, not surveyed geologic contacts.",
-    "ringLonLat": [
-      [
-        -118.4905148,
-        -11.3257961
-      ],
-      [
-        -118.8803463,
-        -11.4817276
-      ],
-      [
-        -119.2367649,
-        -11.5596943
-      ],
-      [
-        -119.6711445,
-        -11.5708313
-      ],
-      [
-        -120.1278057,
-        -11.5485554
-      ],
-      [
-        -120.5176373,
-        -11.4037609
-      ],
-      [
-        -120.7292576,
-        -11.3480721
-      ],
-      [
-        -120.9297428,
-        -11.3480721
-      ],
-      [
-        -121.141367,
-        -11.3926239
-      ],
-      [
-        -121.4309521,
-        -11.370348
-      ],
-      [
-        -121.720541,
-        -11.2923813
-      ],
-      [
-        -122.0880985,
-        -11.1253109
-      ],
-      [
-        -122.6449986,
-        -10.7688942
-      ],
-      [
-        -122.7675152,
-        -10.5015812
-      ],
-      [
-        -122.9345875,
-        -10.3345108
-      ],
-      [
-        -123.1462078,
-        -10.1451645
-      ],
-      [
-        -123.4469357,
-        -9.7441959
-      ],
-      [
-        -123.6696949,
-        -9.3766422
-      ],
-      [
-        -123.6808338,
-        -8.9979496
-      ],
-      [
-        -123.6251431,
-        -8.0289402
-      ],
-      [
-        -123.7253857,
-        -7.3495216
-      ],
-      [
-        -123.7253857,
-        -7.0042419
-      ],
-      [
-        -123.602869,
-        -6.6144123
-      ],
-      [
-        -123.1239338,
-        -5.6788177
-      ],
-      [
-        -122.4111004,
-        -5.0996399
-      ],
-      [
-        -121.6537151,
-        -4.8768806
-      ],
-      [
-        -120.595602,
-        -4.7209473
-      ],
-      [
-        -119.760252,
-        -4.7320862
-      ],
-      [
-        -118.4236889,
-        -4.8434658
-      ],
-      [
-        -117.1985035,
-        -4.9659843
-      ],
-      [
-        -116.9200535,
-        -5.1776066
-      ],
-      [
-        -116.5970516,
-        -5.5562992
-      ],
-      [
-        -116.2851887,
-        -6.1020622
-      ],
-      [
-        -116.3186016,
-        -6.8148956
-      ],
-      [
-        -116.2294979,
-        -7.3161068
-      ],
-      [
-        -116.1849461,
-        -7.8507328
-      ],
-      [
-        -116.1960812,
-        -8.3073921
-      ],
-      [
-        -116.2406368,
-        -8.8865681
-      ],
-      [
-        -116.3520145,
-        -9.2763996
-      ],
-      [
-        -116.4856701,
-        -9.6439533
-      ],
-      [
-        -116.7641239,
-        -10.0894756
-      ],
-      [
-        -116.9868832,
-        -10.3902016
-      ],
-      [
-        -117.3655758,
-        -10.6909275
-      ],
-      [
-        -117.7219906,
-        -10.9471035
-      ],
-      [
-        -118.0784092,
-        -11.1587257
-      ],
-      [
-        -118.4905148,
-        -11.3257961
-      ]
-    ]
-  },
+
   "jezero-western-fan": {
     "featureId": 14300,
     "name": "Jezero",
@@ -5200,7 +5008,7 @@ export const MARS_FEATURE_OUTLINES = {
     "boundaryCaveat": "USGS/IAU Gazetteer named-feature footprint; boundaries are approximate named-feature extents, not surveyed geologic contacts.",
     "ringLonLat": [
       [
-        -177.5,
+        182.5,
         6.0783587
       ],
       [
@@ -5212,11 +5020,11 @@ export const MARS_FEATURE_OUTLINES = {
         16.0196636
       ],
       [
-        -177.5,
+        182.5,
         16.0196636
       ],
       [
-        -177.5,
+        182.5,
         6.0783587
       ]
     ]
@@ -10054,167 +9862,7 @@ export const MARS_FEATURE_OUTLINES = {
       ]
     ]
   },
-  "pavonis-skylight": {
-    "featureId": 4620,
-    "name": "Pavonis Mons",
-    "sourceUrl": "https://planetarynames.wr.usgs.gov/Feature/4620",
-    "sourceCoordinateSystem": "Planetocentric latitude, east longitude 0–360° (converted to Cesium east longitude −180°..180°)",
-    "boundaryCaveat": "USGS/IAU Gazetteer named-feature footprint; boundaries are approximate named-feature extents, not surveyed geologic contacts.",
-    "ringLonLat": [
-      [
-        -112.5819988,
-        -1.8282242
-      ],
-      [
-        -113.033968,
-        -1.9274368
-      ],
-      [
-        -113.4638882,
-        -1.7951527
-      ],
-      [
-        -113.7505016,
-        -1.673893
-      ],
-      [
-        -114.9631023,
-        -0.9794044
-      ],
-      [
-        -115.5804234,
-        -0.2187748
-      ],
-      [
-        -115.8890858,
-        0.5639019
-      ],
-      [
-        -116.0544415,
-        1.67729
-      ],
-      [
-        -115.9552288,
-        2.5371342
-      ],
-      [
-        -115.5142841,
-        3.2977619
-      ],
-      [
-        -114.9079838,
-        3.8599682
-      ],
-      [
-        -114.2465649,
-        4.1024876
-      ],
-      [
-        -113.7945957,
-        4.1465816
-      ],
-      [
-        -113.011919,
-        4.2127247
-      ],
-      [
-        -112.5930195,
-        4.1906757
-      ],
-      [
-        -111.8985348,
-        4.0804386
-      ],
-      [
-        -111.3032589,
-        3.8820133
-      ],
-      [
-        -110.7300282,
-        3.7387066
-      ],
-      [
-        -110.4544392,
-        3.6725674
-      ],
-      [
-        -110.1457767,
-        3.5072117
-      ],
-      [
-        -110.0465641,
-        3.3859539
-      ],
-      [
-        -110.0355396,
-        2.9780788
-      ],
-      [
-        -110.0686092,
-        2.4048481
-      ],
-      [
-        -110.1127071,
-        2.0410709
-      ],
-      [
-        -110.00247,
-        1.8646908
-      ],
-      [
-        -109.8701839,
-        1.7765026
-      ],
-      [
-        -109.9032574,
-        1.5339832
-      ],
-      [
-        -109.9693966,
-        1.2473698
-      ],
-      [
-        -110.0906582,
-        1.015871
-      ],
-      [
-        -110.0465641,
-        0.8174458
-      ],
-      [
-        -110.0575886,
-        0.6190205
-      ],
-      [
-        -110.278059,
-        0.0457935
-      ],
-      [
-        -110.5867214,
-        -0.3841286
-      ],
-      [
-        -111.005621,
-        -0.9132633
-      ],
-      [
-        -111.3363285,
-        -1.354208
-      ],
-      [
-        -111.4796352,
-        -1.5305862
-      ],
-      [
-        -111.9756985,
-        -1.7510586
-      ],
-      [
-        -112.5819988,
-        -1.8282242
-      ]
-    ]
-  },
+
   "airy-zero": {
     "featureId": 115,
     "name": "Airy 0",
@@ -58137,107 +57785,7 @@ export const MARS_FEATURE_OUTLINES = {
       ]
     ]
   },
-  "prometheus-mons": {
-    "featureId": 4742,
-    "name": "Pityusa Patera",
-    "sourceUrl": "https://planetarynames.wr.usgs.gov/Feature/4742",
-    "sourceCoordinateSystem": "Planetocentric latitude, east longitude 0–360° (converted to Cesium east longitude −180°..180°)",
-    "boundaryCaveat": "USGS/IAU Gazetteer named-feature footprint; boundaries are approximate named-feature extents, not surveyed geologic contacts.",
-    "ringLonLat": [
-      [
-        36.4244747,
-        -68.4844227
-      ],
-      [
-        35.4666576,
-        -68.4962349
-      ],
-      [
-        34.3168201,
-        -68.3738251
-      ],
-      [
-        33.5565434,
-        -68.203495
-      ],
-      [
-        33.0251446,
-        -67.8210354
-      ],
-      [
-        32.6090984,
-        -67.3877048
-      ],
-      [
-        32.6223927,
-        -67.0057354
-      ],
-      [
-        32.6749325,
-        -66.5282612
-      ],
-      [
-        32.7874203,
-        -66.1040726
-      ],
-      [
-        33.3998432,
-        -65.7604179
-      ],
-      [
-        34.4543438,
-        -65.5287018
-      ],
-      [
-        35.4637241,
-        -65.4115047
-      ],
-      [
-        36.3709354,
-        -65.4048157
-      ],
-      [
-        37.8689404,
-        -65.4755726
-      ],
-      [
-        38.7502956,
-        -65.6004639
-      ],
-      [
-        39.8887768,
-        -66.0107822
-      ],
-      [
-        40.8078365,
-        -66.5021954
-      ],
-      [
-        41.1273937,
-        -66.9676743
-      ],
-      [
-        40.8437672,
-        -67.2938614
-      ],
-      [
-        40.5168591,
-        -67.5261574
-      ],
-      [
-        38.9825268,
-        -68.0557728
-      ],
-      [
-        37.6104794,
-        -68.3377056
-      ],
-      [
-        36.4244747,
-        -68.4844227
-      ]
-    ]
-  }
+
 } as const;
 
 import type { MarsTarget } from './marsData';
@@ -58290,6 +57838,7 @@ const LOCATION_AREA_SPECS: Record<string, LocationAreaSpec> = {
   'argyre-planitia': { semiMajorKm: 900, semiMinorKm: 750, azimuthDeg: 85, dimensionLabel: '1,800 × 1,500 km impact basin' },
   'korolev-crater': { semiMajorKm: 41, semiMinorKm: 41, azimuthDeg: 0, dimensionLabel: '82 km ice-filled crater' },
   'south-polar-cap': { semiMajorKm: 500, semiMinorKm: 500, azimuthDeg: 0, dimensionLabel: '1,000 km Planum Australe ice plateau', isPolarCap: true },
+  'prometheus-mons': { semiMajorKm: 180, semiMinorKm: 110, azimuthDeg: 25, dimensionLabel: '360 × 220 km southern polar-margin research zone' },
   'noctis-labyrinths': { semiMajorKm: 595, semiMinorKm: 260, azimuthDeg: 95, dimensionLabel: '1,190 × 520 km fractured canyon head' },
   'pavonis-skylight': { semiMajorKm: 0.9, semiMinorKm: 0.9, azimuthDeg: 0, dimensionLabel: '1.8 km pit crater / lava tube' },
   'airy-zero': { semiMajorKm: 0.25, semiMinorKm: 0.25, azimuthDeg: 0, dimensionLabel: '0.5 km prime meridian crater' },
