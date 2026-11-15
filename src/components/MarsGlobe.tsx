@@ -127,8 +127,6 @@ const PRIMARY_GLOBAL_LANDMARK_IDS = new Set([
   'airy-zero',
 ]);
 
-const MARS_MOON_TARGET_IDS = new Set(['phobos', 'deimos']);
-
 const PRIMARY_GLOBAL_SATELLITE_IDS = new Set([
   'mro',
   'maven',
@@ -671,106 +669,6 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
   };
 
   const zoomToTargetInternal = (target: MarsTarget) => {
-    // Phobos / Deimos — fly to live moon position from Keplerian / Horizons elements
-    if (MARS_MOON_TARGET_IDS.has(target.id)) {
-      const viewer = viewerRef.current;
-      const Cesium = window.Cesium;
-      if (!viewer || viewer.isDestroyed() || !Cesium) return;
-      cancelCameraOrientationAnimation();
-      viewer.trackedEntity = undefined;
-      viewer.camera.cancelFlight();
-
-      const elem = moonElementsRef.current[target.id];
-      if (!elem) return;
-
-      // Local Kepler solve (same constants as moon render loop)
-      const mu = 4.282837e13;
-      const rot0 = 176.63;
-      const wdot = 350.89198226;
-      const solveE = (M: number, e: number) => {
-        let E = M + e * Math.sin(M);
-        for (let i = 0; i < 5; i++) {
-          const f = E - e * Math.sin(E) - M;
-          E -= f / (1 - e * Math.cos(E));
-        }
-        return E;
-      };
-      const posAt = (epochMs: number) => {
-        const a = elem.semiMajorAxisMeters;
-        const e = elem.eccentricity;
-        const n = Math.sqrt(mu / (a * a * a));
-        const dt = (epochMs - elem.epochMs) / 1000;
-        const M =
-          ((((elem.meanAnomalyAtEpochDeg * Math.PI) / 180 + n * dt) % (Math.PI * 2)) +
-            Math.PI * 2) %
-          (Math.PI * 2);
-        const E = solveE(M, e);
-        const trueAnom =
-          2 *
-          Math.atan2(
-            Math.sqrt(1 + e) * Math.sin(E / 2),
-            Math.sqrt(1 - e) * Math.cos(E / 2)
-          );
-        const r = a * (1 - e * Math.cos(E));
-        const i = (elem.inclinationDeg * Math.PI) / 180;
-        const O = (elem.raanDeg * Math.PI) / 180;
-        const w = (elem.argPeriapsisDeg * Math.PI) / 180;
-        const u = w + trueAnom;
-        const xMci = r * (Math.cos(O) * Math.cos(u) - Math.sin(O) * Math.sin(u) * Math.cos(i));
-        const yMci = r * (Math.sin(O) * Math.cos(u) + Math.cos(O) * Math.sin(u) * Math.cos(i));
-        const zMci = r * (Math.sin(u) * Math.sin(i));
-        const days = (epochMs - Date.UTC(2000, 0, 1, 12, 0, 0)) / 86_400_000;
-        const wMars = ((rot0 + wdot * days) * Math.PI) / 180;
-        return new Cesium.Cartesian3(
-          xMci * Math.cos(wMars) + yMci * Math.sin(wMars),
-          -xMci * Math.sin(wMars) + yMci * Math.cos(wMars),
-          zMci
-        );
-      };
-
-      const now = Date.now();
-      const satPos = posAt(now + 1800);
-      const nextPos = posAt(now + 2800);
-      const velDir = Cesium.Cartesian3.normalize(
-        Cesium.Cartesian3.subtract(nextPos, satPos, new Cesium.Cartesian3()),
-        new Cesium.Cartesian3()
-      );
-      const radialUp = Cesium.Cartesian3.normalize(satPos, new Cesium.Cartesian3());
-      const offsetDir = Cesium.Cartesian3.normalize(
-        Cesium.Cartesian3.add(
-          Cesium.Cartesian3.multiplyByScalar(velDir, -0.92, new Cesium.Cartesian3()),
-          Cesium.Cartesian3.multiplyByScalar(radialUp, 0.39, new Cesium.Cartesian3()),
-          new Cesium.Cartesian3()
-        ),
-        new Cesium.Cartesian3()
-      );
-      // Stand farther back for the tiny moons so the model fills the view
-      const standOff = target.id === 'phobos' ? 80_000 : 60_000;
-      const camDest = Cesium.Cartesian3.add(
-        satPos,
-        Cesium.Cartesian3.multiplyByScalar(offsetDir, standOff, new Cesium.Cartesian3()),
-        new Cesium.Cartesian3()
-      );
-      const lookDir = Cesium.Cartesian3.normalize(
-        Cesium.Cartesian3.subtract(satPos, camDest, new Cesium.Cartesian3()),
-        new Cesium.Cartesian3()
-      );
-      const up = Cesium.Cartesian3.normalize(
-        Cesium.Cartesian3.cross(
-          Cesium.Cartesian3.cross(lookDir, radialUp, new Cesium.Cartesian3()),
-          lookDir,
-          new Cesium.Cartesian3()
-        ),
-        new Cesium.Cartesian3()
-      );
-      viewer.camera.flyTo({
-        destination: camDest,
-        orientation: { direction: lookDir, up },
-        duration: 2.2,
-      });
-      return;
-    }
-
     if (target.category === 'satellite' && target.orbit) {
       const viewer = viewerRef.current;
       const Cesium = window.Cesium;
@@ -1745,7 +1643,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
             target.category === 'satellite' ? 8_500_000 : SURFACE_SECONDARY_PIN_MAX_DIST_METERS
           );
 
-      if (target.category === 'satellite' && target.orbit && !MARS_MOON_TARGET_IDS.has(target.id)) {
+      if (target.category === 'satellite' && target.orbit) {
         const positionProperty = new Cesium.CallbackProperty(() => {
           const liveElem = liveOrbiterElementsRef.current[target.id];
           const pos = computeSatelliteCartesian(target, getEffectiveEpochMs(), liveElem);
@@ -2702,10 +2600,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
         entityId.startsWith('__site-rect') ||
         entityId.startsWith('__mars-region-')
       ) return undefined;
-      const normalizedId = entityId
-        .replace(/-(spacecraft|rover)$/, '')
-        .replace(/^moon-orbit-ring-/, '')
-        .replace(/-pick$/, '');
+      const normalizedId = entityId.replace(/-(spacecraft|rover)$/, '');
       const found =
         MARS_TARGETS.find((t) => t.id === normalizedId) ??
         customPinsRef.current.find((t) => t.id === normalizedId);
@@ -3589,7 +3484,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
         const effectiveMs = getEffectiveEpochMs();
         const satUpdates: Record<string, LiveSatellitePosition> = {};
         for (const target of MARS_TARGETS) {
-          if (target.category === 'satellite' && target.orbit && !MARS_MOON_TARGET_IDS.has(target.id)) {
+          if (target.category === 'satellite' && target.orbit) {
             const liveElem = liveOrbiterElementsRef.current[target.id];
             const pos = computeSatelliteCartesian(target, effectiveMs, liveElem);
             satUpdates[target.id] = {
@@ -3625,11 +3520,6 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
           } else if (prim.position) {
             // Entity fallback
             prim.position = p;
-          }
-          // Keep pick/label entity on the live moon position
-          const pickEnt = moonOrbitEntitiesRef.current.get(`${moon.id}-pick`);
-          if (pickEnt && pickEnt.position) {
-            pickEnt.position = p;
           }
         }
       }
@@ -3793,41 +3683,6 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
         },
       });
       moonOrbitEntitiesRef.current.set(moon.id, ring);
-    }
-
-
-
-    // Invisible pick targets so Phobos/Deimos open the same info card as other orbiters
-    for (const moon of MARS_MOONS) {
-      const elem = moonElementsRef.current[moon.id];
-      if (!elem) continue;
-      const pickEntity = viewer.entities.add({
-        id: moon.id,
-        name: moon.name,
-        position: moonPositionAt(elem, Date.now()),
-        point: {
-          pixelSize: 14,
-          color: CesiumMoon.Color.TRANSPARENT,
-          outlineColor: CesiumMoon.Color.TRANSPARENT,
-          disableDepthTestDistance: Number.POSITIVE_INFINITY,
-        },
-        label: {
-          text: moon.name,
-          font: '600 12px Inter, system-ui, sans-serif',
-          fillColor: CesiumMoon.Color.fromCssColorString('#f5e6d3'),
-          outlineColor: CesiumMoon.Color.BLACK,
-          outlineWidth: 3,
-          style: CesiumMoon.LabelStyle.FILL_AND_OUTLINE,
-          verticalOrigin: CesiumMoon.VerticalOrigin.BOTTOM,
-          pixelOffset: new CesiumMoon.Cartesian2(0, -16),
-          disableDepthTestDistance: Number.POSITIVE_INFINITY,
-          distanceDisplayCondition: new CesiumMoon.DistanceDisplayCondition(0, 40_000_000),
-          showBackground: true,
-          backgroundColor: CesiumMoon.Color.fromCssColorString('#0B0F17').withAlpha(0.55),
-          backgroundPadding: new CesiumMoon.Cartesian2(6, 4),
-        },
-      });
-      moonOrbitEntitiesRef.current.set(`${moon.id}-pick`, pickEntity);
     }
 
 

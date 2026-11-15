@@ -981,55 +981,7 @@ const EXPANDED_ORBITERS: MarsTarget[] = [
     dustRisk: 'All-weather UHF Doppler & RDF ranging through dust storms',
     astronautAdvisory:
       'Provides polar and high-latitude rover teams with regular orbital Doppler positioning fixes.',
-  }),,
-
-  makeOrbiterTarget({
-    id: 'phobos',
-    name: 'Phobos (Mars I)',
-    shortName: 'Phobos',
-    region: 'Inner Martian Moon',
-    altitudeKm: 5980,
-    inclinationDeg: 1.08,
-    raanDeg: 80.5,
-    initialPhaseDeg: 42,
-    missionStatus: 'Natural Satellite · Tidal Decay',
-    agency: 'NASA / JPL-Caltech (3D model & ephemeris)',
-    epochOrSol: 'Discovered 1877 · Asaph Hall',
-    scientificSignificance:
-      'Innermost moon of Mars (~11 km mean radius). Orbits every ~7.65 hours at ~9,375 km from Mars center (~6,000 km above the surface). Tidal forces are slowly lowering its orbit. 3D model: NASA/JPL-Caltech Science 3D Resources. Orbits synchronized from JPL Horizons MAR099.',
-    searchKeywords:
-      'phobos moon natural satellite mars i stickney crater mmx horizons orbiter',
-    photoUrl:
-      'https://assets.science.nasa.gov/content/dam/science/psd/mars/resources/list_images/24878_Phobos_1_1000-320x240-1.jpg',
-    photoCaption: 'NASA/JPL-Caltech · Phobos 3D model visualization',
-    dustRisk: 'Regolith is fine, dark, and loosely bound; Stickney crater dominates the nearside.',
-    astronautAdvisory:
-      'Illustration-scale moon model. True mean radius ~11 km (Ernst et al. 2023). Future sample-return target for JAXA MMX.',
   }),
-  makeOrbiterTarget({
-    id: 'deimos',
-    name: 'Deimos (Mars II)',
-    shortName: 'Deimos',
-    region: 'Outer Martian Moon',
-    altitudeKm: 20060,
-    inclinationDeg: 1.79,
-    raanDeg: 40.0,
-    initialPhaseDeg: 210,
-    missionStatus: 'Natural Satellite · Stable Outer Orbit',
-    agency: 'NASA / JPL-Caltech (3D model & ephemeris)',
-    epochOrSol: 'Discovered 1877 · Asaph Hall',
-    scientificSignificance:
-      'Outer moon of Mars (~6.3 km mean radius). Orbits every ~30.3 hours at ~23,458 km from Mars center (~20,000 km above the surface). Nearly circular, low-inclination orbit. 3D model: NASA/JPL-Caltech Science 3D Resources. Orbits synchronized from JPL Horizons MAR099.',
-    searchKeywords:
-      'deimos moon natural satellite mars ii horizons orbiter outer moon',
-    photoUrl:
-      'https://assets.science.nasa.gov/content/dam/science/psd/mars/resources/list_images/24879_Deimos_1_1000-320x240-1.jpg',
-    photoCaption: 'NASA/JPL-Caltech · Deimos 3D model visualization',
-    dustRisk: 'Smoother, dust-mantled surface with fewer large craters than Phobos.',
-    astronautAdvisory:
-      'Illustration-scale moon model. True mean radius ~6.3 km (Ernst et al. 2023).',
-  }),
-
 ];
 
 const EXPANDED_LANDMARKS: MarsTarget[] = [
