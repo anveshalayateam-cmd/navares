@@ -14,26 +14,19 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Restore truncated InfoMenu if needed
+      - name: Apply patches
         run: |
-          SIZE=$(wc -c < src/components/InfoMenu.tsx)
-          echo "InfoMenu size=$SIZE"
-          if [ "$SIZE" -lt 20000 ]; then
-            echo "Restoring InfoMenu from good commit"
-            git checkout 074c2d2f6019386ac079f9a5fe9927e3228d7a21 -- src/components/InfoMenu.tsx
-          fi
-
-      - name: Apply edits
-        run: python3 scripts/apply_mars_edits.py
+          python3 scripts/apply_mars_edits.py || true
+          python3 scripts/hide_hud_until_ready.py
 
       - name: Commit and push
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A src/components/MarsGlobe.tsx src/components/InfoMenu.tsx
+          git add -A src/components/MarsGlobe.tsx src/components/InfoMenu.tsx src/App.tsx
           if git diff --staged --quiet; then
             echo "No changes"
           else
-            git commit -m "Clouds always on (dim); sandy Mars colors; ILoveMars loading; Grok in About"
+            git commit -m "Hide HUD while globe loads; credit loading Mars image"
             git push
           fi
