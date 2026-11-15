@@ -1137,11 +1137,12 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
       return;
     }
 
-    // Force Cesium's native Sun-driven terminator lighting on the Mars globe.
-    viewer.scene.globe.enableLighting = true;
+    // Enable the fixed, camera-relative terminator only in Optical mode.
+    const initialShadowEnabled =
+      sunShadowEnabledRef.current && mapStyleRef.current === 'optical';
+    viewer.scene.globe.enableLighting = initialShadowEnabled;
     viewer.scene.sun = new Cesium.Sun();
     viewer.scene.sun.show = true;
-    viewer.scene.light = new Cesium.SunLight();
     viewer.scene.globe.dynamicAtmosphereLighting = true;
     viewer.scene.globe.dynamicAtmosphereLightingFromSun = true;
 
@@ -1221,10 +1222,12 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
       ? MOBILE_MAXIMUM_SCREEN_SPACE_ERROR
       : DESKTOP_MAXIMUM_SCREEN_SPACE_ERROR;
     viewer.scene.verticalExaggeration = MARS_TERRAIN_VERTICAL_EXAGGERATION;
-    // Keep the night-side terminator active at every zoom level and map style.
-    viewer.scene.globe.enableLighting = true;
-    viewer.scene.globe.dynamicAtmosphereLighting = true;
-    viewer.scene.globe.dynamicAtmosphereLightingFromSun = true;
+    // Keep the Optical terminator active at every zoom level, but never shade
+    // the scientific Radiation, Temperature, or Elevation map styles.
+    viewer.scene.globe.enableLighting = initialShadowEnabled;
+    viewer.scene.globe.dynamicAtmosphereLighting = initialShadowEnabled;
+    // Use the same camera-relative directional light as the surface terminator.
+    viewer.scene.globe.dynamicAtmosphereLightingFromSun = false;
     viewer.scene.globe.showGroundAtmosphere = true;
     viewer.scene.globe.nightFadeInDistance = 10_000_000.0;
     viewer.scene.globe.nightFadeOutDistance = 50_000_000.0;
@@ -1277,7 +1280,8 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
       layer.minificationFilter = Cesium.TextureMinificationFilter.LINEAR;
       // Preserve the Sun-lit day side and let native globe lighting darken the night side.
       layer.dayAlpha = 1.0;
-      layer.nightAlpha = sunShadowEnabledRef.current ? 0.0 : 1.0;
+      layer.nightAlpha =
+        sunShadowEnabledRef.current && mapStyleRef.current === 'optical' ? 0.0 : 1.0;
     };
 
     // 1. Optical Base Layer: Viking Color Mosaic 232m (natural daytime color)
@@ -1338,7 +1342,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
         uniforms: {
           image: getGlobalMarsCloudCanvas(),
           u_opacity: showInitialClouds ? initialCloudOpacity : 0.0,
-          u_shadowEnabled: sunShadowEnabledRef.current ? 1.0 : 0.0,
+          u_shadowEnabled: initialShadowEnabled ? 1.0 : 0.0,
         },
         source: `
           uniform sampler2D image;
@@ -3043,6 +3047,10 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
       new Cesium.Cartesian3()
     );
 
+    // SunLight has no mutable direction vector; use DirectionalLight so the
+    // preUpdate callback can hold the terminator at a constant camera-relative angle.
+    viewer.scene.light = new Cesium.DirectionalLight({ direction: marsSunDirection });
+
     const updateCameraDaylight = () => {
       if (viewer.isDestroyed()) return;
 
@@ -3690,7 +3698,8 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     nextLayer.magnificationFilter = Cesium.TextureMagnificationFilter.LINEAR;
     nextLayer.minificationFilter = Cesium.TextureMinificationFilter.LINEAR;
     nextLayer.dayAlpha = 1.0;
-    nextLayer.nightAlpha = sunShadowEnabledRef.current ? 0.0 : 1.0;
+    nextLayer.nightAlpha =
+      sunShadowEnabledRef.current && mapStyleRef.current === 'optical' ? 0.0 : 1.0;
     nextLayer.show = mapStyleRef.current === 'temperature';
     nextLayer.alpha = 0.85;
     nextLayer.contrast = 1.12;
@@ -3722,9 +3731,10 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
         throw new Error('Cesium globe or imagery layer collection is unavailable.');
       }
 
-      globe.enableLighting = true;
-      globe.dynamicAtmosphereLighting = true;
-      globe.dynamicAtmosphereLightingFromSun = true;
+      const effectiveShadow = sunShadowEnabled && mapStyle === 'optical';
+      globe.enableLighting = effectiveShadow;
+      globe.dynamicAtmosphereLighting = effectiveShadow;
+      globe.dynamicAtmosphereLightingFromSun = false;
       globe.nightFadeInDistance = 1e7;
       globe.nightFadeOutDistance = 5e7;
 
@@ -3734,7 +3744,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
         const layer = imageryLayers.get(index);
         if (!layer) continue;
         layer.dayAlpha = 1.0;
-        layer.nightAlpha = sunShadowEnabled ? 0.0 : 1.0;
+        layer.nightAlpha = effectiveShadow ? 0.0 : 1.0;
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
