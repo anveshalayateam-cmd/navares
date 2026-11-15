@@ -1238,6 +1238,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
         infoBox: false,
         selectionIndicator: false,
         creditContainer: document.createElement('div'),
+        contextOptions: { webgl: { alpha: true } },
       });
     } catch (err) {
       setWebglError(
@@ -1301,9 +1302,12 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
       },
     ];
 
-    // Subtle dusty Martian amber/butterscotch haze that is fully visible by 100 km
-    // and fades out completely by 200 km, keeping orbital views crisp against the starfield.
-    viewer.scene.backgroundColor = Cesium.Color.BLACK;
+    // Render the scene transparently so the altitude-driven Martian sky gradient can sit behind it.
+    viewer.scene.backgroundColor = Cesium.Color.TRANSPARENT;
+    viewer.scene.skyAtmosphere.show = false;
+    viewer.scene.globe.showGroundAtmosphere = false;
+    container.style.backgroundColor = '#000000';
+    container.style.backgroundImage = 'none';
     viewer.scene.highDynamicRange = false;
     const marsSkyAtmosphere = new Cesium.SkyAtmosphere(marsEllipsoid);
     marsSkyAtmosphere.show = false;
@@ -3392,54 +3396,15 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
         }
       }
 
-      // Butterscotch-amber sky and ground atmosphere fade in only below 10 km.
-      const atmVisible = t > 0.002;
-      const targetHueShift = Cesium.Math.lerp(0.0, -0.42, t);
-      const targetSaturationShift = Cesium.Math.lerp(0.0, 0.26, t);
-      const targetBrightnessShift = Cesium.Math.lerp(-1.0, -0.18, t);
-      const targetSkyLightIntensity = 105.0 * t;
-      const targetGlobeLightIntensity = 120.0 * t;
-      const skyAtmosphere = viewer.scene.skyAtmosphere;
-      if (skyAtmosphere) {
-        if (skyAtmosphere.show !== atmVisible) {
-          skyAtmosphere.show = atmVisible;
-        }
-        if (
-          Math.abs(skyAtmosphere.hueShift - Cesium.Math.lerp(0.0, -0.22, t)) > 0.001 ||
-          Math.abs(skyAtmosphere.saturationShift - Cesium.Math.lerp(0.0, 0.035, t)) > 0.001 ||
-          Math.abs(skyAtmosphere.brightnessShift - Cesium.Math.lerp(-1.0, -0.38, t)) > 0.001 ||
-          Math.abs((skyAtmosphere.atmosphereLightIntensity ?? 0) - targetSkyLightIntensity) > 0.05
-        ) {
-          skyAtmosphere.hueShift = Cesium.Math.lerp(0.0, -0.22, t);
-          skyAtmosphere.saturationShift = Cesium.Math.lerp(0.0, 0.035, t);
-          skyAtmosphere.brightnessShift = Cesium.Math.lerp(-1.0, -0.38, t);
-          skyAtmosphere.atmosphereLightIntensity = targetSkyLightIntensity;
-        }
-      }
-      if (viewer.scene.globe.showGroundAtmosphere !== atmVisible) {
-        viewer.scene.globe.showGroundAtmosphere = atmVisible;
-      }
-      if (
-        Math.abs((viewer.scene.globe.atmosphereHueShift ?? 0.0) - targetHueShift) > 0.001 ||
-        Math.abs((viewer.scene.globe.atmosphereSaturationShift ?? 0.0) - targetSaturationShift) > 0.001 ||
-        Math.abs((viewer.scene.globe.atmosphereBrightnessShift ?? -1.0) - targetBrightnessShift) > 0.001 ||
-        Math.abs(viewer.scene.globe.atmosphereLightIntensity - targetGlobeLightIntensity) > 0.05
-      ) {
-        viewer.scene.globe.atmosphereHueShift = targetHueShift;
-        viewer.scene.globe.atmosphereSaturationShift = targetSaturationShift;
-        viewer.scene.globe.atmosphereBrightnessShift = targetBrightnessShift;
-        viewer.scene.globe.atmosphereLightIntensity = targetGlobeLightIntensity;
-      }
-      if (viewer.scene.fog) {
-        const targetFogDensity = 0.0000055 * t;
-        if (
-          viewer.scene.fog.enabled !== atmVisible ||
-          Math.abs((viewer.scene.fog.density ?? 0) - targetFogDensity) > 0.0000001
-        ) {
-          viewer.scene.fog.enabled = atmVisible;
-          viewer.scene.fog.density = targetFogDensity;
-        }
-      }
+      // Keep Cesium's Earth-biased scattering disabled. Show a custom Martian dusk gradient
+      // through the transparent WebGL canvas, fading smoothly to pure black above 10 km.
+      viewer.scene.skyAtmosphere.show = false;
+      viewer.scene.globe.showGroundAtmosphere = false;
+      const skyOpacity = t;
+      container.style.backgroundColor = '#000000';
+      container.style.backgroundImage = skyOpacity > 0
+        ? `linear-gradient(to top, rgba(200, 139, 90, ${skyOpacity}) 0%, rgba(138, 86, 54, ${skyOpacity}) 28%, rgba(58, 35, 24, ${skyOpacity}) 65%, rgba(5, 5, 7, ${skyOpacity}) 100%)`
+        : 'none';
 
       // Throttle the compass heading React update to ~10/s instead of every rendered frame.
       const currentHeading = viewer.camera.heading;
