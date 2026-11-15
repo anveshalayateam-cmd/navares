@@ -1137,6 +1137,14 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
       return;
     }
 
+    // Force Cesium's native Sun-driven terminator lighting on the Mars globe.
+    viewer.scene.globe.enableLighting = true;
+    viewer.scene.sun = new Cesium.Sun();
+    viewer.scene.sun.show = true;
+    viewer.scene.light = new Cesium.SunLight();
+    viewer.scene.globe.dynamicAtmosphereLighting = true;
+    viewer.scene.globe.dynamicAtmosphereLightingFromSun = true;
+
     viewerRef.current = viewer;
     // Keep camera glides on a continuous render loop and allow high-refresh displays to render
     // above the default 60 FPS target without changing scene resolution or visual styling.
@@ -1213,11 +1221,13 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
       ? MOBILE_MAXIMUM_SCREEN_SPACE_ERROR
       : DESKTOP_MAXIMUM_SCREEN_SPACE_ERROR;
     viewer.scene.verticalExaggeration = MARS_TERRAIN_VERTICAL_EXAGGERATION;
-    const initialShadowEnabled = sunShadowEnabledRef.current && mapStyleRef.current === 'optical';
-    viewer.scene.globe.enableLighting = initialShadowEnabled;
-    viewer.scene.globe.dynamicAtmosphereLighting = initialShadowEnabled;
-    viewer.scene.globe.dynamicAtmosphereLightingFromSun = false;
-    viewer.scene.globe.showGroundAtmosphere = false;
+    // Keep the night-side terminator active at every zoom level and map style.
+    viewer.scene.globe.enableLighting = true;
+    viewer.scene.globe.dynamicAtmosphereLighting = true;
+    viewer.scene.globe.dynamicAtmosphereLightingFromSun = true;
+    viewer.scene.globe.showGroundAtmosphere = true;
+    viewer.scene.globe.nightFadeInDistance = 10_000_000.0;
+    viewer.scene.globe.nightFadeOutDistance = 50_000_000.0;
     if (viewer.scene.fog) {
       viewer.scene.fog.enabled = false;
       viewer.scene.fog.density = 0.0;
@@ -1234,15 +1244,9 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     viewer.scene.globe.atmosphereRayleighScaleHeight = 6800;
     viewer.scene.globe.atmosphereMieScaleHeight = 3200;
     viewer.scene.globe.depthTestAgainstTerrain = true;
-    viewer.scene.light = new Cesium.DirectionalLight({
-      direction: new Cesium.Cartesian3(-0.66, -0.42, -0.623),
-      color: Cesium.Color.fromCssColorString('#fff6eb'),
-      intensity: 2.35,
-    });
     (viewer.scene.globe as any).lambertDiffuseMultiplier = 0.85;
     (viewer.scene.globe as any).showWaterEffect = false;
 
-    viewer.scene.sun = new Cesium.Sun();
     viewer.scene.moon = undefined;
 
     // Replace any custom/AI-generated space backdrop with CesiumJS's built-in Tycho-2 star
@@ -3703,11 +3707,15 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     if (!isReady) return;
     const viewer = viewerRef.current;
     if (!viewer || viewer.isDestroyed()) return;
-    const effectiveShadow = sunShadowEnabled && mapStyle === 'optical';
-    viewer.scene.globe.enableLighting = effectiveShadow;
-    viewer.scene.globe.dynamicAtmosphereLighting = effectiveShadow;
+    // Reassert native Sun-driven lighting after map-style and shadow-control updates.
+    viewer.scene.globe.enableLighting = true;
+    viewer.scene.globe.dynamicAtmosphereLighting = true;
+    viewer.scene.globe.dynamicAtmosphereLightingFromSun = true;
+    viewer.scene.globe.nightFadeInDistance = 10_000_000.0;
+    viewer.scene.globe.nightFadeOutDistance = 50_000_000.0;
 
-    // Hide all surface imagery on Mars's night side so the shadow is fully black.
+    const effectiveShadow = sunShadowEnabled && mapStyle === 'optical';
+    // Hide surface imagery on the night side when the shadow control is enabled.
     const imageryLayers = viewer.scene.globe.imageryLayers;
     for (let index = 0; index < imageryLayers.length; index += 1) {
       imageryLayers.get(index).nightAlpha = effectiveShadow ? 0.0 : 1.0;
