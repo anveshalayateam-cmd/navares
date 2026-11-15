@@ -1238,7 +1238,8 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
         infoBox: false,
         selectionIndicator: false,
         creditContainer: document.createElement('div'),
-        contextOptions: { webgl: { alpha: true } },
+        contextOptions: { webgl: { alpha: false } },
+
       });
     } catch (err) {
       setWebglError(
@@ -1302,8 +1303,8 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
       },
     ];
 
-    // Render the scene transparently so the altitude-driven Martian sky gradient can sit behind it.
-    viewer.scene.backgroundColor = Cesium.Color.TRANSPARENT;
+    // Keep an opaque black scene background; Cesium's Earth-biased atmosphere remains disabled.
+    viewer.scene.backgroundColor = Cesium.Color.BLACK;
     viewer.scene.skyAtmosphere.show = false;
     viewer.scene.globe.showGroundAtmosphere = false;
     container.style.backgroundColor = '#000000';
@@ -1328,9 +1329,9 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
       ? MOBILE_MAXIMUM_SCREEN_SPACE_ERROR
       : DESKTOP_MAXIMUM_SCREEN_SPACE_ERROR;
     viewer.scene.verticalExaggeration = MARS_TERRAIN_VERTICAL_EXAGGERATION;
-    // Keep the Mars globe fully opaque and sun-lit so its unlit hemisphere resolves to black.
-    viewer.scene.globe.enableLighting = true;
-    viewer.scene.globe.dynamicAtmosphereLighting = false;
+    const initialShadowEnabled = sunShadowEnabledRef.current && mapStyleRef.current === 'optical';
+    viewer.scene.globe.enableLighting = initialShadowEnabled;
+    viewer.scene.globe.dynamicAtmosphereLighting = initialShadowEnabled;
     viewer.scene.globe.dynamicAtmosphereLightingFromSun = false;
     viewer.scene.globe.showGroundAtmosphere = false;
     if (viewer.scene.fog) {
@@ -1447,7 +1448,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
         uniforms: {
           image: getGlobalMarsCloudCanvas(),
           u_opacity: showInitialClouds ? initialCloudOpacity : 0.0,
-          u_shadowEnabled: 1.0,
+          u_shadowEnabled: initialShadowEnabled ? 1.0 : 0.0,
         },
         source: `
           uniform sampler2D image;
@@ -3397,15 +3398,12 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
         }
       }
 
-      // Keep Cesium's Earth-biased scattering disabled. Show a custom Martian dusk gradient
-      // through the transparent WebGL canvas, fading smoothly to pure black above 10 km.
+      // Keep Cesium's Earth-biased scattering disabled and the opaque space background black.
+      // Globe lighting remains independent of this altitude-based background treatment.
       viewer.scene.skyAtmosphere.show = false;
       viewer.scene.globe.showGroundAtmosphere = false;
-      const skyOpacity = t;
       container.style.backgroundColor = '#000000';
-      container.style.backgroundImage = skyOpacity > 0
-        ? `linear-gradient(to top, rgba(200, 139, 90, ${skyOpacity}) 0%, rgba(138, 86, 54, ${skyOpacity}) 28%, rgba(58, 35, 24, ${skyOpacity}) 65%, rgba(5, 5, 7, ${skyOpacity}) 100%)`
-        : 'none';
+      container.style.backgroundImage = 'none';
 
       // Throttle the compass heading React update to ~10/s instead of every rendered frame.
       const currentHeading = viewer.camera.heading;
@@ -3995,13 +3993,14 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     if (!isReady) return;
     const viewer = viewerRef.current;
     if (!viewer || viewer.isDestroyed()) return;
-    // Lighting stays enabled regardless of imagery style or the optional shadow UI toggle.
-    // Zero night-side imagery alpha exposes the globe's opaque black baseColor on the dark hemisphere.
-    viewer.scene.globe.enableLighting = true;
-    viewer.scene.globe.dynamicAtmosphereLighting = false;
+    const effectiveShadow = sunShadowEnabled && mapStyle === 'optical';
+    viewer.scene.globe.enableLighting = effectiveShadow;
+    viewer.scene.globe.dynamicAtmosphereLighting = effectiveShadow;
+
+    // Hide all surface imagery on Mars's night side so the shadow is fully black.
     const imageryLayers = viewer.scene.globe.imageryLayers;
     for (let index = 0; index < imageryLayers.length; index += 1) {
-      imageryLayers.get(index).nightAlpha = 0.0;
+      imageryLayers.get(index).nightAlpha = effectiveShadow ? 0.0 : 1.0;
     }
   }, [sunShadowEnabled, mapStyle, isReady]);
 
