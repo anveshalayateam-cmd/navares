@@ -19,6 +19,8 @@ export interface CesiumEntity {
 export interface CesiumImageryLayer {
   show: boolean;
   alpha: number;
+  dayAlpha?: number;
+  nightAlpha?: number;
   hue?: number;
   contrast: number;
   brightness: number;
@@ -56,6 +58,8 @@ export interface CesiumViewer {
       showGroundAtmosphere: boolean;
       lightingFadeInDistance?: number;
       lightingFadeOutDistance?: number;
+      nightFadeInDistance?: number;
+      nightFadeOutDistance?: number;
       preloadSiblings?: boolean;
       preloadAncestors?: boolean;
       tileCacheSize?: number;
