@@ -35,6 +35,12 @@ import {
   normalizeSiteRectangle,
 } from '../utils/marsWaterModel';
 import { getGlobalMarsCloudCanvas } from '../utils/marsClouds';
+import { MARS_MOONS } from '../data/marsMoons';
+import {
+  LiveMoonElements,
+  loadCachedMoonElements,
+  refreshMoonEphemerides,
+} from '../services/marsMoonSync';
 import { createMarsProceduralImageryProvider } from '../utils/marsTiledProviders';
 import { CameraTelemetry, CursorTelemetry } from './CursorTelemetryPill';
 import { DroppedPinCandidate } from './DropPinOverlay';
@@ -382,6 +388,10 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
   const ctxLayerRef = useRef<CesiumImageryLayer | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const cloudShellPrimitiveRef = useRef<any>(null);
+  // Phobos & Deimos Cesium Model entities (NASA glTF)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const moonPrimitivesRef = useRef<Map<string, any>>(new Map());
+  const moonElementsRef = useRef<Record<string, LiveMoonElements>>(loadCachedMoonElements());
   const cloudModeBlendRef = useRef<number>(mapStyle === 'optical' ? 1 : 0);
   const reliefShadeLayerRef = useRef<CesiumImageryLayer | null>(null);
   const temperatureLayerRef = useRef<CesiumImageryLayer | null>(null);
@@ -3485,6 +3495,34 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
           }
         }
         onLiveSatellitesUpdateRef.current(satUpdates);
+
+      // Update Phobos & Deimos model matrices (real-time Keplerian / Horizons)
+      if (moonPrimitivesRef.current.size > 0) {
+        const nowMs = Date.now();
+        for (const moon of MARS_MOONS) {
+          const prim = moonPrimitivesRef.current.get(moon.id);
+          const elem = moonElementsRef.current[moon.id];
+          if (!prim || !elem) continue;
+          const p = moonPositionAt(elem, nowMs);
+          if (prim.modelMatrix) {
+            // Cesium.Model
+            const enu = CesiumMoon.Transforms.eastNorthUpToFixedFrame(p);
+            const scale = CesiumMoon.Matrix4.fromScale(
+              new CesiumMoon.Cartesian3(
+                moon.meanRadiusMeters,
+                moon.meanRadiusMeters,
+                moon.meanRadiusMeters
+              )
+            );
+            prim.modelMatrix = CesiumMoon.Matrix4.multiply(enu, scale, new CesiumMoon.Matrix4());
+          } else if (prim.position) {
+            // Entity fallback
+            prim.position = p;
+          }
+        }
+      }
+
+
       }
 
       rafId = requestAnimationFrame(tickOrbit);
@@ -3529,6 +3567,15 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
       unbindCtxErr();
       unbindShadeErr();
       removeSiteFillPrimitive();
+      moonPrimitivesRef.current.forEach((prim) => {
+        try {
+          if (prim && viewer && !viewer.isDestroyed()) {
+            if (viewer.scene.primitives.contains(prim)) viewer.scene.primitives.remove(prim);
+            else if (prim.id && viewer.entities.getById(prim.id)) viewer.entities.remove(prim);
+          }
+        } catch { /* ignore */ }
+      });
+      moonPrimitivesRef.current.clear();
       if (cloudShellPrimitiveRef.current && !viewer.isDestroyed()) {
         viewer.scene.primitives.remove(cloudShellPrimitiveRef.current);
       }
