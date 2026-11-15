@@ -808,9 +808,9 @@ export function InfoMenu({ hasTargetCardOpen }: InfoMenuProps) {
                       <strong className="font-semibold text-white">Google AI Studio (Gemini)</strong>,{' '}
                       <strong className="font-semibold text-white">Manus</strong>,{' '}
                       <strong className="font-semibold text-white">OpenHands</strong>,{' '}
-                      <strong className="font-semibold text-white">Google AI</strong>, and{' '}
-                      <strong className="font-semibold text-white">ChatGPT</strong>,{' '}
-                       <strong className="font-semibold text-white">Grok</strong> — used for code
+                      <strong className="font-semibold text-white">Google AI</strong>,{' '}
+                      <strong className="font-semibold text-white">ChatGPT</strong>, and{' '}
+                      <strong className="font-semibold text-white">Grok</strong> — used for code
                       architecture, CesiumJS geospatial debugging, dataset structuring, UI
                       refinement, shader/lighting adjustments, and generating custom SVG/vector
                       spacecraft sprites.
