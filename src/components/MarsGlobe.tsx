@@ -358,6 +358,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
   ref
 ) {
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const amberHazeOverlayRef = useRef<HTMLDivElement | null>(null);
   const viewerRef = useRef<CesiumViewer | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const marsEllipsoidRef = useRef<any>(null);
@@ -1160,7 +1161,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
 
     const controller = viewer.scene.screenSpaceCameraController;
     controller.enableCollisionDetection = false;
-    controller.minimumZoomDistance = MIN_CAMERA_HEIGHT_METERS;
+    controller.minimumZoomDistance = 2500;
     controller.maximumZoomDistance = MAX_CAMERA_HEIGHT_METERS;
     controller.enableZoom = true;
     controller.enableRotate = true;
@@ -3029,6 +3030,11 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     const scratchCamUp = new Cesium.Cartesian3();
     const scratchCamRight = new Cesium.Cartesian3();
     const scratchLightDir = new Cesium.Cartesian3();
+    const scratchAtmosphereCameraNormal = new Cesium.Cartesian3();
+    const marsSunDirection = Cesium.Cartesian3.normalize(
+      new Cesium.Cartesian3(-0.66, -0.42, -0.623),
+      new Cesium.Cartesian3()
+    );
 
     const updateCameraDaylight = () => {
       if (viewer.isDestroyed()) return;
@@ -3245,6 +3251,18 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
 
       const camCarto = marsEllipsoid.cartesianToCartographic(viewer.camera.positionWC);
       const camHeight = camCarto ? camCarto.height : DEFAULT_CAMERA_HEIGHT_METERS;
+      const atmosphereOverlay = amberHazeOverlayRef.current;
+      if (atmosphereOverlay) {
+        const altitudeProgress = Cesium.Math.clamp((15000 - camHeight) / 12500, 0.0, 1.0);
+        const altitudeFade = altitudeProgress * altitudeProgress * (3.0 - 2.0 * altitudeProgress);
+        Cesium.Cartesian3.normalize(viewer.camera.positionWC, scratchAtmosphereCameraNormal);
+        const daylightDot = Cesium.Cartesian3.dot(scratchAtmosphereCameraNormal, marsSunDirection);
+        const daylightFade = Cesium.Math.clamp((daylightDot + 0.04) / 0.16, 0.0, 1.0);
+        const overlayOpacity = altitudeFade * daylightFade;
+        if (Math.abs(Number(atmosphereOverlay.style.opacity) - overlayOpacity) > 0.002) {
+          atmosphereOverlay.style.opacity = overlayOpacity.toFixed(3);
+        }
+      }
       const ctxOpacity = getCtxFadeAlpha(camHeight);
       // Restrict the warm iron-oxide grade to low-altitude optical views.
       const t = Cesium.Math.clamp((10000 - camHeight) / 9000, 0.0, 1.0);
@@ -3925,6 +3943,17 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
         }}
         className="w-full h-full"
         aria-label="Interactive 3D Mars Globe"
+      />
+      <div
+        ref={amberHazeOverlayRef}
+        aria-hidden="true"
+        className="absolute inset-0 z-[5] pointer-events-none"
+        style={{
+          opacity: 0,
+          mixBlendMode: 'screen',
+          background:
+            'linear-gradient(to bottom, rgba(217, 138, 43, 0) 35%, rgba(224, 145, 48, 0.32) 55%, rgba(195, 110, 32, 0.22) 75%, rgba(0, 0, 0, 0) 100%)',
+        }}
       />
 
       {!isReady && !webglError && (
