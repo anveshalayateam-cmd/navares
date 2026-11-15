@@ -285,10 +285,12 @@ function applyOpticalColorForAltitude(
     layer.gamma = 0.9;
     return;
   }
-  // Cesium imagery-layer defaults preserve the ungraded orbital appearance at t = 0.
+  // Restore every Optical grading property after scientific modes, which darken this layer.
+  // Brightness is not altitude-graded: it must always return to the full default value.
   layer.hue = lerp(0.0, -0.06, t);
   layer.saturation = lerp(1.0, 1.45, t);
   layer.contrast = lerp(1.0, 1.18, t);
+  layer.brightness = 1.0;
   layer.gamma = lerp(1.0, 0.82, t);
 }
 
