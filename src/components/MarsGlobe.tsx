@@ -1143,8 +1143,8 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     viewer.scene.globe.enableLighting = initialShadowEnabled;
     viewer.scene.sun = new Cesium.Sun();
     viewer.scene.sun.show = true;
-    viewer.scene.globe.dynamicAtmosphereLighting = true;
-    viewer.scene.globe.dynamicAtmosphereLightingFromSun = true;
+    viewer.scene.globe.dynamicAtmosphereLighting = initialShadowEnabled;
+    viewer.scene.globe.dynamicAtmosphereLightingFromSun = false;
 
     viewerRef.current = viewer;
     // Keep camera glides on a continuous render loop and allow high-refresh displays to render
@@ -3723,8 +3723,8 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     if (!viewer || viewer.isDestroyed()) return;
 
     try {
-      // The scene's SunLight is initialized once with the Viewer. Do not replace it
-      // during React updates; doing so can race Cesium's per-frame lighting uniforms.
+      // The camera-relative DirectionalLight is installed once during Viewer setup.
+      // Keep its direction stable through per-frame camera updates; do not replace it here.
       const globe = viewer.scene.globe;
       const imageryLayers = viewer.imageryLayers;
       if (!globe || !imageryLayers || typeof imageryLayers.get !== 'function') {
