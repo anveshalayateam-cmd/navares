@@ -3723,7 +3723,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
 
     // Apply the shadow toggle to every surface style; a style switch must not
     // restore night-side imagery and wash out the terminator.
-    const imageryLayers = viewer.scene.globe.imageryLayers;
+    const imageryLayers = viewer.imageryLayers;
     for (let index = 0; index < imageryLayers.length; index += 1) {
       const layer = imageryLayers.get(index);
       layer.dayAlpha = 1.0;
