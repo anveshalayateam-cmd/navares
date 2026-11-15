@@ -1275,6 +1275,9 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     const configureLayerFiltering = (layer: CesiumImageryLayer) => {
       layer.magnificationFilter = Cesium.TextureMagnificationFilter.LINEAR;
       layer.minificationFilter = Cesium.TextureMinificationFilter.LINEAR;
+      // Preserve the Sun-lit day side and let native globe lighting darken the night side.
+      layer.dayAlpha = 1.0;
+      layer.nightAlpha = sunShadowEnabledRef.current ? 0.0 : 1.0;
     };
 
     // 1. Optical Base Layer: Viking Color Mosaic 232m (natural daytime color)
@@ -3686,6 +3689,8 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     const nextLayer = viewer.imageryLayers.addImageryProvider(provider);
     nextLayer.magnificationFilter = Cesium.TextureMagnificationFilter.LINEAR;
     nextLayer.minificationFilter = Cesium.TextureMinificationFilter.LINEAR;
+    nextLayer.dayAlpha = 1.0;
+    nextLayer.nightAlpha = sunShadowEnabledRef.current ? 0.0 : 1.0;
     nextLayer.show = mapStyleRef.current === 'temperature';
     nextLayer.alpha = 0.85;
     nextLayer.contrast = 1.12;
@@ -3708,17 +3713,21 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     const viewer = viewerRef.current;
     if (!viewer || viewer.isDestroyed()) return;
     // Reassert native Sun-driven lighting after map-style and shadow-control updates.
+    const Cesium = window.Cesium;
+    viewer.scene.light = new Cesium.SunLight();
     viewer.scene.globe.enableLighting = true;
     viewer.scene.globe.dynamicAtmosphereLighting = true;
     viewer.scene.globe.dynamicAtmosphereLightingFromSun = true;
-    viewer.scene.globe.nightFadeInDistance = 10_000_000.0;
-    viewer.scene.globe.nightFadeOutDistance = 50_000_000.0;
+    viewer.scene.globe.nightFadeInDistance = 1e7;
+    viewer.scene.globe.nightFadeOutDistance = 5e7;
 
-    const effectiveShadow = sunShadowEnabled && mapStyle === 'optical';
-    // Hide surface imagery on the night side when the shadow control is enabled.
+    // Apply the shadow toggle to every surface style; a style switch must not
+    // restore night-side imagery and wash out the terminator.
     const imageryLayers = viewer.scene.globe.imageryLayers;
     for (let index = 0; index < imageryLayers.length; index += 1) {
-      imageryLayers.get(index).nightAlpha = effectiveShadow ? 0.0 : 1.0;
+      const layer = imageryLayers.get(index);
+      layer.dayAlpha = 1.0;
+      layer.nightAlpha = sunShadowEnabled ? 0.0 : 1.0;
     }
   }, [sunShadowEnabled, mapStyle, isReady]);
 
