@@ -4279,10 +4279,10 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
               className="absolute inset-0 w-full h-full object-cover object-center"
             />
             <div className="relative z-10 flex flex-col items-center justify-center gap-4">
-              <div className="w-12 h-12 rounded-full border-[3px] border-white/35 border-t-white animate-spin" />
               <p className="font-display text-lg sm:text-xl font-semibold tracking-wide text-white drop-shadow-sm">
                 ILoveMars
               </p>
+              <div className="w-12 h-12 rounded-full border-[3px] border-white/35 border-t-white animate-spin" />
             </div>
           </div>
         </div>
