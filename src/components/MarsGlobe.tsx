@@ -3276,13 +3276,16 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
         }
       }
 
-      // Butterscotch-amber sky and ground atmosphere fade in only below 10 km.
-      const atmVisible = t > 0.002;
-      const targetHueShift = Cesium.Math.lerp(0.0, -0.55, t);
-      const targetSaturationShift = Cesium.Math.lerp(0.0, 0.05, t);
-      const targetBrightnessShift = Cesium.Math.lerp(-1.0, -0.45, t);
-      const targetSkyLightIntensity = 100.0 * t;
-      const targetGlobeLightIntensity = 50.0 * t;
+      // Butterscotch-amber sky and ground atmosphere fade in from 150 km
+      // and reach full strength by 20 km, independently of the low-altitude surface color grade.
+      const atmosphereProgress = Cesium.Math.clamp((150000 - camHeight) / 130000, 0.0, 1.0);
+      const atmT = atmosphereProgress * atmosphereProgress * (3.0 - 2.0 * atmosphereProgress);
+      const atmVisible = atmT > 0.002;
+      const targetHueShift = Cesium.Math.lerp(0.0, -0.55, atmT);
+      const targetSaturationShift = Cesium.Math.lerp(0.0, 0.05, atmT);
+      const targetBrightnessShift = Cesium.Math.lerp(-1.0, -0.45, atmT);
+      const targetSkyLightIntensity = 100.0 * atmT;
+      const targetGlobeLightIntensity = 50.0 * atmT;
       const skyAtmosphere = viewer.scene.skyAtmosphere;
       if (skyAtmosphere) {
         if (skyAtmosphere.show !== atmVisible) {
