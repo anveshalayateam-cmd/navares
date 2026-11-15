@@ -12,8 +12,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Inject moon model setup
-        run: python3 scripts/add_mars_moons_setup.py
+      - name: Add moon orbit lines
+        run: python3 scripts/add_moon_orbit_lines.py
 
       - name: Commit and push
         run: |
@@ -23,6 +23,6 @@ jobs:
           if git diff --staged --quiet; then
             echo "No changes"
           else
-            git commit -m "Load NASA Phobos/Deimos glTF models and Keplerian helpers"
+            git commit -m "Faint glowing orbital paths for Phobos and Deimos"
             git push
           fi
