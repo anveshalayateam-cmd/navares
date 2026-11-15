@@ -1338,7 +1338,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
         uniforms: {
           image: getGlobalMarsCloudCanvas(),
           u_opacity: showInitialClouds ? initialCloudOpacity : 0.0,
-          u_shadowEnabled: initialShadowEnabled ? 1.0 : 0.0,
+          u_shadowEnabled: sunShadowEnabledRef.current ? 1.0 : 0.0,
         },
         source: `
           uniform sampler2D image;
