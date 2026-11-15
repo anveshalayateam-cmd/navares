@@ -391,6 +391,8 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
   // Phobos & Deimos Cesium Model entities (NASA glTF)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const moonPrimitivesRef = useRef<Map<string, any>>(new Map());
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const moonOrbitEntitiesRef = useRef<Map<string, any>>(new Map());
   const moonElementsRef = useRef<Record<string, LiveMoonElements>>(loadCachedMoonElements());
   const cloudModeBlendRef = useRef<number>(mapStyle === 'optical' ? 1 : 0);
   const reliefShadeLayerRef = useRef<CesiumImageryLayer | null>(null);
@@ -3618,6 +3620,72 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
         });
     }
 
+
+    // Faint glowing orbital paths (full 360°) for Phobos & Deimos
+    const moonOrbitColors: Record<string, string> = {
+      phobos: '#e8c4a0',
+      deimos: '#b8c4d4',
+    };
+    for (const moon of MARS_MOONS) {
+      const elem = moonElementsRef.current[moon.id];
+      if (!elem) continue;
+      const steps = 128;
+      const sampleOrbit = (epochMs: number) => {
+        const pts: any[] = [];
+        const baseMa = elem.meanAnomalyAtEpochDeg;
+        for (let s = 0; s <= steps; s++) {
+          const maDeg = baseMa + (360 * s) / steps;
+          const sampleElem = { ...elem, meanAnomalyAtEpochDeg: maDeg, epochMs: elem.epochMs };
+          pts.push(moonPositionAt(sampleElem, elem.epochMs));
+        }
+        return pts;
+      };
+      // Callback so the ring tracks live Horizons updates without recreating the entity
+      let cachedPts: any[] = sampleOrbit(Date.now());
+      let lastSample = 0;
+      const positions = new CesiumMoon.CallbackProperty(() => {
+        const now = performance.now();
+        if (now - lastSample > 5000) {
+          lastSample = now;
+          const live = moonElementsRef.current[moon.id];
+          if (live) {
+            const pts: any[] = [];
+            for (let s = 0; s <= steps; s++) {
+              const maDeg = live.meanAnomalyAtEpochDeg + (360 * s) / steps;
+              pts.push(
+                moonPositionAt(
+                  { ...live, meanAnomalyAtEpochDeg: maDeg, epochMs: live.epochMs },
+                  live.epochMs
+                )
+              );
+            }
+            cachedPts = pts;
+          }
+        }
+        return cachedPts;
+      }, false);
+
+      const glowColor = CesiumMoon.Color.fromCssColorString(
+        moonOrbitColors[moon.id] ?? '#d4c4a8'
+      );
+      const ring = viewer.entities.add({
+        id: `moon-orbit-ring-${moon.id}`,
+        name: `${moon.name} orbit`,
+        show: true,
+        polyline: {
+          positions,
+          width: 2.0,
+          material: new CesiumMoon.PolylineGlowMaterialProperty({
+            glowPower: 0.18,
+            taperPower: 1.0,
+            color: glowColor.withAlpha(0.45),
+          }),
+        },
+      });
+      moonOrbitEntitiesRef.current.set(moon.id, ring);
+    }
+
+
     refreshMoonEphemerides(moonElementsRef.current).then((next) => {
       moonElementsRef.current = next;
     });
@@ -3670,6 +3738,12 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
         } catch { /* ignore */ }
       });
       moonPrimitivesRef.current.clear();
+      moonOrbitEntitiesRef.current.forEach((ent) => {
+        try {
+          if (ent && viewer && !viewer.isDestroyed()) viewer.entities.remove(ent);
+        } catch { /* ignore */ }
+      });
+      moonOrbitEntitiesRef.current.clear();
       if (cloudShellPrimitiveRef.current && !viewer.isDestroyed()) {
         viewer.scene.primitives.remove(cloudShellPrimitiveRef.current);
       }
