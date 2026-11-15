@@ -11,20 +11,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
-      - name: Apply moon integration
-        run: python3 scripts/add_mars_moons.py
+      - name: Inject moon model setup
+        run: python3 scripts/add_mars_moons_setup.py
 
       - name: Commit and push
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A src/
+          git add -A src/components/MarsGlobe.tsx
           if git diff --staged --quiet; then
             echo "No changes"
           else
-            git commit -m "Phobos & Deimos: NASA glTF models, JPL Horizons orbits, attribution"
+            git commit -m "Load NASA Phobos/Deimos glTF models and Keplerian helpers"
             git push
           fi
