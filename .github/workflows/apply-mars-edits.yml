@@ -3,86 +3,36 @@ name: Apply Mars Edits
 on:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   patch:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Restore InfoMenu from last known-good commit if truncated
+      - name: Restore truncated InfoMenu if needed
         run: |
-          SIZE=$(wc -c < src/components/InfoMenu.tsx || echo 0)
+          SIZE=$(wc -c < src/components/InfoMenu.tsx)
           echo "InfoMenu size=$SIZE"
           if [ "$SIZE" -lt 20000 ]; then
-            echo "InfoMenu looks truncated; restoring from 074c2d2f..."
+            echo "Restoring InfoMenu from good commit"
             git checkout 074c2d2f6019386ac079f9a5fe9927e3228d7a21 -- src/components/InfoMenu.tsx
-            # Cloud attribution: always present, slightly dim
-            python3 - <<'PY'
-            from pathlib import Path
-            p = Path("src/components/InfoMenu.tsx")
-            t = p.read_text()
-            old = """        Global translucent water-ice and aerosol cloud veil visible above{' '}
-        <span className=\"font-mono-tabular text-slate-200\">7,000 km</span> \u2014 invisible straight-on
-        while emerging smoothly along planetary edges and horizons \u2014 is procedurally generated with
-        AI assistance, inspired by orbital photography from{' '}"""
-            # try both unicode and ascii dashes
-            old2 = old.replace("\u2014", "\u2014")
-            new = """        Global translucent water-ice and aerosol cloud veil (always present, slightly dim) \u2014
-        invisible straight-on while emerging smoothly along planetary edges and horizons \u2014 is
-        procedurally generated with AI assistance, inspired by orbital photography from{' '}"""
-            if old not in t:
-                old = old.replace("\u2014", "\u2014")
-            # Use the exact bytes from the restored file
-            import re
-            t2, n = re.subn(
-                r"Global translucent water-ice and aerosol cloud veil visible above\{' '\}\s*\n\s*<span className=\"font-mono-tabular text-slate-200\">7,000 km</span> \u2014 invisible straight-on\s*\n\s*while emerging smoothly along planetary edges and horizons \u2014 is procedurally generated with\s*\n\s*AI assistance, inspired by orbital photography from\{' '\}",
-                "Global translucent water-ice and aerosol cloud veil (always present, slightly dim) \u2014\n        invisible straight-on while emerging smoothly along planetary edges and horizons \u2014 is\n        procedurally generated with AI assistance, inspired by orbital photography from{' '}",
-                t,
-                count=1,
-            )
-            if n == 0:
-                # ascii hyphen variant
-                t2, n = re.subn(
-                    r"Global translucent water-ice and aerosol cloud veil visible above\{' '\}\s*\n\s*<span className=\"font-mono-tabular text-slate-200\">7,000 km</span> . invisible straight-on\s*\n\s*while emerging smoothly along planetary edges and horizons . is procedurally generated with\s*\n\s*AI assistance, inspired by orbital photography from\{' '\}",
-                    "Global translucent water-ice and aerosol cloud veil (always present, slightly dim) \u2014\n        invisible straight-on while emerging smoothly along planetary edges and horizons \u2014 is\n        procedurally generated with AI assistance, inspired by orbital photography from{' '}",
-                    t,
-                    count=1,
-                )
-            print("cloud attr replacements", n)
-            # Grok
-            old_ai = (
-                '<strong className="font-semibold text-white">OpenHands</strong>, and{\' \'}\n'
-                '                      <strong className="font-semibold text-white">Google AI</strong>'
-            )
-            new_ai = (
-                '<strong className="font-semibold text-white">OpenHands</strong>,{\' \'}\n'
-                '                      <strong className="font-semibold text-white">Google AI</strong>, and{\' \'}\n'
-                '                      <strong className="font-semibold text-white">Grok</strong>'
-            )
-            if old_ai in t2 and "Grok" not in t2:
-                t2 = t2.replace(old_ai, new_ai, 1)
-                print("Grok added")
-            p.write_text(t2)
-            PY
-          else
-            echo "InfoMenu size OK"
           fi
 
-      - name: Apply MarsGlobe edits
+      - name: Apply edits
         run: python3 scripts/apply_mars_edits.py
 
       - name: Commit and push
         run: |
           git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add src/components/MarsGlobe.tsx src/components/InfoMenu.tsx
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A src/components/MarsGlobe.tsx src/components/InfoMenu.tsx
           if git diff --staged --quiet; then
-            echo "No changes to commit"
+            echo "No changes"
           else
             git commit -m "Clouds always on (dim); sandy Mars colors; ILoveMars loading; Grok in About"
             git push
