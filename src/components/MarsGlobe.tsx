@@ -1351,8 +1351,9 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
       viewer.scene.fog.minimumBrightness = 0.02;
       viewer.scene.fog.screenSpaceErrorFactor = 2.0;
     }
-    viewer.scene.globe.lightingFadeOutDistance = 4_200_000;
-    viewer.scene.globe.lightingFadeInDistance = 5_900_000;
+    // Keep globe lighting active at every supported camera altitude; do not fade the night-side shadow with zoom.
+    viewer.scene.globe.lightingFadeOutDistance = 1_000_000_000;
+    viewer.scene.globe.lightingFadeInDistance = 1_000_000_000;
     viewer.scene.globe.atmosphereLightIntensity = 0.0;
     viewer.scene.globe.atmosphereHueShift = -0.45;
     viewer.scene.globe.atmosphereSaturationShift = 0.15;
