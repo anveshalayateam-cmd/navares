@@ -1253,20 +1253,71 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
 
     viewer.scene.moon = undefined;
 
-    // Replace any custom/AI-generated space backdrop with CesiumJS's built-in Tycho-2 star
-    // catalog skybox so the starfield renders authentic astronomical star positions.
-    const starfieldSkyBox = new Cesium.SkyBox({
-      sources: {
-        positiveX: `${TYCHO_STARFIELD_SKYBOX_BASE}px.jpg`,
-        negativeX: `${TYCHO_STARFIELD_SKYBOX_BASE}mx.jpg`,
-        positiveY: `${TYCHO_STARFIELD_SKYBOX_BASE}py.jpg`,
-        negativeY: `${TYCHO_STARFIELD_SKYBOX_BASE}my.jpg`,
-        positiveZ: `${TYCHO_STARFIELD_SKYBOX_BASE}pz.jpg`,
-        negativeZ: `${TYCHO_STARFIELD_SKYBOX_BASE}mz.jpg`,
-      },
-    });
+    // Keep the Tycho-2 starfield, but rotate the background 180 degrees around
+    // its north/south axis without rotating Mars or changing the camera.
+    const starfieldFaceUrls = {
+      positiveX: `${TYCHO_STARFIELD_SKYBOX_BASE}px.jpg`,
+      negativeX: `${TYCHO_STARFIELD_SKYBOX_BASE}mx.jpg`,
+      positiveY: `${TYCHO_STARFIELD_SKYBOX_BASE}py.jpg`,
+      negativeY: `${TYCHO_STARFIELD_SKYBOX_BASE}my.jpg`,
+      positiveZ: `${TYCHO_STARFIELD_SKYBOX_BASE}pz.jpg`,
+      negativeZ: `${TYCHO_STARFIELD_SKYBOX_BASE}mz.jpg`,
+    };
+    const starfieldSkyBox = new Cesium.SkyBox({ sources: starfieldFaceUrls });
     starfieldSkyBox.show = true;
     viewer.scene.skyBox = starfieldSkyBox;
+
+    // A 180-degree rotation around the celestial Z axis swaps opposite X/Y
+    // faces; each cube face is also turned 180 degrees to preserve edge alignment.
+    const loadRotatedStarfieldFace = (url: string): Promise<HTMLCanvasElement> =>
+      new Promise((resolve, reject) => {
+        const image = new Image();
+        image.crossOrigin = 'anonymous';
+        image.onload = () => {
+          const canvas = document.createElement('canvas');
+          canvas.width = image.naturalWidth;
+          canvas.height = image.naturalHeight;
+          const context = canvas.getContext('2d');
+          if (!context) {
+            reject(new Error('Could not prepare a rotated starfield face.'));
+            return;
+          }
+          context.translate(canvas.width, canvas.height);
+          context.rotate(Math.PI);
+          context.drawImage(image, 0, 0);
+          resolve(canvas);
+        };
+        image.onerror = () => reject(new Error(`Could not load starfield face: ${url}`));
+        image.src = url;
+      });
+
+    void Promise.all([
+      loadRotatedStarfieldFace(starfieldFaceUrls.negativeX),
+      loadRotatedStarfieldFace(starfieldFaceUrls.positiveX),
+      loadRotatedStarfieldFace(starfieldFaceUrls.negativeY),
+      loadRotatedStarfieldFace(starfieldFaceUrls.positiveY),
+      loadRotatedStarfieldFace(starfieldFaceUrls.positiveZ),
+      loadRotatedStarfieldFace(starfieldFaceUrls.negativeZ),
+    ])
+      .then(([positiveX, negativeX, positiveY, negativeY, positiveZ, negativeZ]) => {
+        if (viewer.isDestroyed()) return;
+        const rotatedStarfieldSkyBox = new Cesium.SkyBox({
+          sources: {
+            positiveX,
+            negativeX,
+            positiveY,
+            negativeY,
+            positiveZ,
+            negativeZ,
+          } as any,
+        });
+        rotatedStarfieldSkyBox.show = true;
+        viewer.scene.skyBox = rotatedStarfieldSkyBox;
+      })
+      .catch((error) => {
+        // Retain the original starfield if the rotated cube faces cannot be prepared.
+        console.warn('[MarsGlobe] Could not rotate starfield background:', error);
+      });
 
     const removeRenderError = viewer.scene.renderError?.addEventListener(
       (_scene: unknown, error: unknown) => {
