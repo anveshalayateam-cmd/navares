@@ -160,6 +160,35 @@ const FPS_SAMPLE_WINDOW_MS = 1000;
 const HEADING_THROTTLE_MS = 100;
 const CURSOR_PICK_THROTTLE_MS = 66;
 
+interface CameraMotionSample {
+  timeMs: number;
+  latitudeRad: number;
+  longitudeRad: number;
+  heightMeters: number;
+  headingRad: number;
+  pitchRad: number;
+  rollRad: number;
+}
+
+interface CameraInertia {
+  latitudeRadPerSecond: number;
+  longitudeRadPerSecond: number;
+  logHeightPerSecond: number;
+  headingRadPerSecond: number;
+  pitchRadPerSecond: number;
+  rollRadPerSecond: number;
+  lastTimeMs: number;
+}
+
+function wrapCameraRadians(angle: number): number {
+  const fullTurn = Math.PI * 2;
+  return ((angle + Math.PI) % fullTurn + fullTurn) % fullTurn - Math.PI;
+}
+
+function clampCameraValue(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
 const isMobileOrTouchDevice = (): boolean => {
   if (typeof window === 'undefined') return false;
   const coarsePointer =
@@ -257,6 +286,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
   const shadowMaterialRef = useRef<any>(null);
   const zoomHoldTimerRef = useRef<number | null>(null);
   const zoomHoldRafRef = useRef<number | null>(null);
+  const cameraInertiaRef = useRef<CameraInertia | null>(null);
 
   const pinEntitiesRef = useRef<Map<string, CesiumEntity>>(new Map());
   const spacecraftEntitiesRef = useRef<Map<string, CesiumEntity>>(new Map());
@@ -381,6 +411,28 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
       cancelAnimationFrame(cameraAnimationFrameRef.current);
       cameraAnimationFrameRef.current = null;
     }
+    cameraInertiaRef.current = null;
+  };
+
+  const addWheelZoomImpulse = (deltaY: number) => {
+    if (!Number.isFinite(deltaY) || deltaY === 0) return;
+    const now = performance.now();
+    const motion = cameraInertiaRef.current ?? {
+      latitudeRadPerSecond: 0,
+      longitudeRadPerSecond: 0,
+      logHeightPerSecond: 0,
+      headingRadPerSecond: 0,
+      pitchRadPerSecond: 0,
+      rollRadPerSecond: 0,
+      lastTimeMs: now,
+    };
+    motion.logHeightPerSecond = clampCameraValue(
+      motion.logHeightPerSecond + deltaY * 0.00108,
+      -2.4,
+      2.4
+    );
+    motion.lastTimeMs = now;
+    cameraInertiaRef.current = motion;
   };
 
   const zoomToLocationInternal = (lat: number, lon: number, alt = 15000) => {
@@ -564,6 +616,8 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     );
     const clampedTilt = Math.max(0, Math.min(80, tiltDeg));
     const startedAt = performance.now();
+    let lastFrameAt = startedAt;
+    let elapsedMs = 0;
 
     cancelCameraOrientationAnimation();
     viewer.camera.cancelFlight();
@@ -588,7 +642,10 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
 
     const animate = (now: number) => {
       if (viewer.isDestroyed()) return;
-      const progress = Math.min(1, (now - startedAt) / duration);
+      const dt = Math.min((now - lastFrameAt) / 1000, 0.05);
+      lastFrameAt = now;
+      elapsedMs += dt * 1000;
+      const progress = Math.min(1, elapsedMs / duration);
       const eased = progress * progress * (3 - 2 * progress);
       const heading = currentHeading + headingDelta * eased;
       const tilt = currentTilt + (clampedTilt - currentTilt) * eased;
@@ -688,7 +745,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
           zoomHoldRafRef.current = null;
           return;
         }
-        const dtSec = Math.min(0.05, Math.max(0.004, (now - lastTs) / 1000));
+        const dtSec = Math.min((now - lastTs) / 1000, 0.05);
         lastTs = now;
 
         const carto = marsEllipsoid.cartesianToCartographic(viewer.camera.positionWC);
@@ -723,16 +780,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     viewer.trackedEntity = undefined;
     viewer.camera.cancelFlight();
 
-    const carto = marsEllipsoid.cartesianToCartographic(viewer.camera.positionWC);
-    const cameraHeight = carto ? Math.max(MIN_CAMERA_HEIGHT_METERS, carto.height) : 10000;
-    const step = Math.max(15, cameraHeight * 0.06 * CAMERA_INPUT_SENSITIVITY_MULTIPLIER);
-    if (deltaY < 0) {
-      const moveStep = Math.min(Math.max(0, cameraHeight - MIN_CAMERA_HEIGHT_METERS), step);
-      if (moveStep > 0) viewer.camera.moveForward(moveStep);
-    } else {
-      const moveStep = Math.min(Math.max(0, MAX_CAMERA_HEIGHT_METERS - cameraHeight), step);
-      if (moveStep > 0) viewer.camera.moveBackward(moveStep);
-    }
+    addWheelZoomImpulse(deltaY);
   };
 
   const clearMeasurementInternal = () => {
@@ -910,19 +958,13 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     controller.enableTilt = true;
     controller.enableTranslate = true;
     controller.zoomFactor = 5.0 * CAMERA_INPUT_SENSITIVITY_MULTIPLIER;
-    controller.inertiaZoom = 0.85;
-    controller.inertiaSpin = 0.94;
-    controller.inertiaTranslate = 0.94;
+    // Custom camera inertia below integrates each pose update with delta time and owns decay.
+    controller.inertiaZoom = 0;
+    controller.inertiaSpin = 0;
+    controller.inertiaTranslate = 0;
     controller.maximumMovementRatio = 0.05;
     controller.bounceAnimationTime = 0;
-    controller.zoomEventTypes = [
-      Cesium.CameraEventType.WHEEL,
-      {
-        eventType: Cesium.CameraEventType.WHEEL,
-        modifier: Cesium.KeyboardEventModifier.CTRL,
-      },
-      Cesium.CameraEventType.PINCH,
-    ];
+    controller.zoomEventTypes = [Cesium.CameraEventType.PINCH];
     controller.tiltEventTypes = [
       Cesium.CameraEventType.PINCH,
       Cesium.CameraEventType.RIGHT_DRAG,
@@ -2262,8 +2304,101 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
 
     updateCameraDaylight();
 
+    const activeCameraPointers = new Set<number>();
+    const pointerStartPositions = new Map<number, { x: number; y: number }>();
+    const cameraMotionSamples: CameraMotionSample[] = [];
+    let cameraGestureMoved = false;
+
+    const readCameraMotionSample = (timeMs: number): CameraMotionSample | null => {
+      const cartographic = marsEllipsoid.cartesianToCartographic(viewer.camera.positionWC);
+      if (!cartographic) return null;
+      return {
+        timeMs,
+        latitudeRad: cartographic.latitude,
+        longitudeRad: cartographic.longitude,
+        heightMeters: cartographic.height,
+        headingRad: viewer.camera.heading,
+        pitchRad: viewer.camera.pitch,
+        rollRad: viewer.camera.roll,
+      };
+    };
+
+    const recordCameraMotionSample = (timeMs: number) => {
+      if (activeCameraPointers.size === 0) return;
+      const sample = readCameraMotionSample(timeMs);
+      if (!sample) return;
+      cameraMotionSamples.push(sample);
+      const oldestAllowedTime = timeMs - 120;
+      while (
+        cameraMotionSamples.length > 2 &&
+        cameraMotionSamples[0].timeMs < oldestAllowedTime
+      ) {
+        cameraMotionSamples.shift();
+      }
+    };
+
+    const hasCameraInertia = (motion: CameraInertia) =>
+      Math.abs(motion.latitudeRadPerSecond) > 0.00001 ||
+      Math.abs(motion.longitudeRadPerSecond) > 0.00001 ||
+      Math.abs(motion.logHeightPerSecond) > 0.0001 ||
+      Math.abs(motion.headingRadPerSecond) > 0.00001 ||
+      Math.abs(motion.pitchRadPerSecond) > 0.00001 ||
+      Math.abs(motion.rollRadPerSecond) > 0.00001;
+
+    const updateCameraInertia = (now: number) => {
+      const motion = cameraInertiaRef.current;
+      if (!motion) return;
+      const dt = Math.min((now - motion.lastTimeMs) / 1000, 0.05);
+      motion.lastTimeMs = now;
+      if (dt <= 0) return;
+
+      const cartographic = marsEllipsoid.cartesianToCartographic(viewer.camera.positionWC);
+      if (!cartographic) {
+        cameraInertiaRef.current = null;
+        return;
+      }
+
+      const latitude = clampCameraValue(
+        cartographic.latitude + motion.latitudeRadPerSecond * dt,
+        -Math.PI / 2 + 0.0001,
+        Math.PI / 2 - 0.0001
+      );
+      const longitude = wrapCameraRadians(
+        cartographic.longitude + motion.longitudeRadPerSecond * dt
+      );
+      const height = clampCameraValue(
+        cartographic.height * Math.exp(motion.logHeightPerSecond * dt),
+        MIN_CAMERA_HEIGHT_METERS,
+        MAX_CAMERA_HEIGHT_METERS
+      );
+      const heading = wrapCameraRadians(
+        viewer.camera.heading + motion.headingRadPerSecond * dt
+      );
+      const pitch = clampCameraValue(
+        viewer.camera.pitch + motion.pitchRadPerSecond * dt,
+        Cesium.Math.toRadians(-90),
+        Cesium.Math.toRadians(-0.1)
+      );
+      const roll = wrapCameraRadians(viewer.camera.roll + motion.rollRadPerSecond * dt);
+
+      viewer.camera.setView({
+        destination: Cesium.Cartesian3.fromRadians(longitude, latitude, height, marsEllipsoid),
+        orientation: { heading, pitch, roll },
+      });
+
+      const decay = Math.pow(0.05, dt);
+      motion.latitudeRadPerSecond *= decay;
+      motion.longitudeRadPerSecond *= decay;
+      motion.logHeightPerSecond *= decay;
+      motion.headingRadPerSecond *= decay;
+      motion.pitchRadPerSecond *= decay;
+      motion.rollRadPerSecond *= decay;
+      if (!hasCameraInertia(motion)) cameraInertiaRef.current = null;
+    };
+
     // preUpdate runs right before UniformState updates frame lighting
     const removePreUpdate = viewer.scene.preUpdate.addEventListener(() => {
+      updateCameraInertia(performance.now());
       updateCameraDaylight();
     });
 
@@ -2382,6 +2517,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
       if (viewer.isDestroyed()) return;
 
       const now = performance.now();
+      recordCameraMotionSample(now);
 
       // Frame-rate sampler: FXAA is a full-screen pass, so shed it when the budget is missed.
       fpsFrameCount += 1;
@@ -2530,6 +2666,78 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     });
 
     const canvas = viewer.scene.canvas;
+    const handleCameraPointerDown = (event: PointerEvent) => {
+      if (activeCameraPointers.size === 0) {
+        cancelCameraOrientationAnimation();
+        viewer.camera.cancelFlight();
+        cameraGestureMoved = false;
+        cameraMotionSamples.length = 0;
+        const initialSample = readCameraMotionSample(performance.now());
+        if (initialSample) cameraMotionSamples.push(initialSample);
+      }
+      activeCameraPointers.add(event.pointerId);
+      pointerStartPositions.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    };
+    const handleCameraPointerMove = (event: PointerEvent) => {
+      if (!activeCameraPointers.has(event.pointerId)) return;
+      const start = pointerStartPositions.get(event.pointerId);
+      if (start && Math.hypot(event.clientX - start.x, event.clientY - start.y) >= 3) {
+        cameraGestureMoved = true;
+      }
+    };
+    const handleCameraPointerUp = (event: PointerEvent) => {
+      if (!activeCameraPointers.has(event.pointerId)) return;
+      const now = performance.now();
+      const finalSample = readCameraMotionSample(now);
+      if (finalSample) cameraMotionSamples.push(finalSample);
+      activeCameraPointers.delete(event.pointerId);
+      pointerStartPositions.delete(event.pointerId);
+      if (activeCameraPointers.size > 0) return;
+
+      if (cameraGestureMoved && cameraMotionSamples.length >= 2) {
+        const end = cameraMotionSamples[cameraMotionSamples.length - 1];
+        const start =
+          cameraMotionSamples.find((sample) => end.timeMs - sample.timeMs <= 120) ??
+          cameraMotionSamples[0];
+        const elapsedSeconds = Math.max(1 / 120, (end.timeMs - start.timeMs) / 1000);
+        const angularRate = (delta: number) => clampCameraValue(delta / elapsedSeconds, -4, 4);
+        const motion: CameraInertia = {
+          latitudeRadPerSecond: angularRate(end.latitudeRad - start.latitudeRad),
+          longitudeRadPerSecond: angularRate(
+            wrapCameraRadians(end.longitudeRad - start.longitudeRad)
+          ),
+          logHeightPerSecond: clampCameraValue(
+            Math.log(
+              Math.max(MIN_CAMERA_HEIGHT_METERS, end.heightMeters) /
+                Math.max(MIN_CAMERA_HEIGHT_METERS, start.heightMeters)
+            ) / elapsedSeconds,
+            -2.4,
+            2.4
+          ),
+          headingRadPerSecond: angularRate(
+            wrapCameraRadians(end.headingRad - start.headingRad)
+          ),
+          pitchRadPerSecond: angularRate(end.pitchRad - start.pitchRad),
+          rollRadPerSecond: angularRate(wrapCameraRadians(end.rollRad - start.rollRad)),
+          lastTimeMs: now,
+        };
+        if (hasCameraInertia(motion)) cameraInertiaRef.current = motion;
+      }
+
+      cameraMotionSamples.length = 0;
+      cameraGestureMoved = false;
+    };
+    const clearCameraGesture = () => {
+      activeCameraPointers.clear();
+      pointerStartPositions.clear();
+      cameraMotionSamples.length = 0;
+      cameraGestureMoved = false;
+      cameraInertiaRef.current = null;
+    };
+    const handleCameraPointerCancel = (event: PointerEvent) => {
+      if (activeCameraPointers.has(event.pointerId)) clearCameraGesture();
+    };
+    const handleWindowBlur = () => clearCameraGesture();
     const handlePointerLeave = () => {
       lastCursorPositionRef.current = null;
       onCursorTelemetryChangeRef.current(null);
@@ -2543,12 +2751,23 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     };
     const handleContainerWheel = (e: WheelEvent) => {
       cancelCameraOrientationAnimation();
-      // Prevent browser tab zoom when pinching on a laptop trackpad (ctrlKey + wheel)
-      if (e.ctrlKey && e.cancelable) {
-        e.preventDefault();
-      }
+      if (e.cancelable) e.preventDefault();
+      viewer.trackedEntity = undefined;
+      viewer.camera.cancelFlight();
+      const deltaPixels =
+        e.deltaMode === 1
+          ? e.deltaY * 16
+          : e.deltaMode === 2
+            ? e.deltaY * Math.max(1, canvas.clientHeight)
+            : e.deltaY;
+      addWheelZoomImpulse(deltaPixels);
     };
     container.addEventListener('wheel', handleContainerWheel, { passive: false });
+    canvas.addEventListener('pointerdown', handleCameraPointerDown, { passive: true });
+    window.addEventListener('pointermove', handleCameraPointerMove, { passive: true });
+    window.addEventListener('pointerup', handleCameraPointerUp, { passive: true });
+    window.addEventListener('pointercancel', handleCameraPointerCancel, { passive: true });
+    window.addEventListener('blur', handleWindowBlur);
     canvas.addEventListener('webglcontextlost', handleContextLost);
     canvas.addEventListener('webglcontextrestored', handleContextRestored);
     canvas.addEventListener('pointerleave', handlePointerLeave);
@@ -2558,7 +2777,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     let lastUiSyncTime = 0;
 
     const tickOrbit = (now: number) => {
-      const dtSec = Math.min(0.1, (now - lastFrameTime) / 1000);
+      const dtSec = Math.min((now - lastFrameTime) / 1000, 0.05);
       lastFrameTime = now;
 
       if (telemetryModeRef.current === 'simulation100x') {
@@ -2609,9 +2828,15 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
         layerTransitionFrameRef.current = null;
       }
       container.removeEventListener('wheel', handleContainerWheel);
+      canvas.removeEventListener('pointerdown', handleCameraPointerDown);
+      window.removeEventListener('pointermove', handleCameraPointerMove);
+      window.removeEventListener('pointerup', handleCameraPointerUp);
+      window.removeEventListener('pointercancel', handleCameraPointerCancel);
+      window.removeEventListener('blur', handleWindowBlur);
       canvas.removeEventListener('webglcontextlost', handleContextLost);
       canvas.removeEventListener('webglcontextrestored', handleContextRestored);
       canvas.removeEventListener('pointerleave', handlePointerLeave);
+      cameraInertiaRef.current = null;
       handler.destroy();
       unbindVikingErr();
       unbindCtxErr();
