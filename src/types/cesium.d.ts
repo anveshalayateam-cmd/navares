@@ -77,7 +77,6 @@ export interface CesiumViewer {
     primitives: {
       add: (primitive: unknown) => unknown;
       remove: (primitive: unknown) => boolean;
-      contains: (primitive: unknown) => boolean;
     };
     skyAtmosphere: {
       show?: boolean;
