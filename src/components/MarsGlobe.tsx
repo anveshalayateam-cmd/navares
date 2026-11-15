@@ -1328,9 +1328,9 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
       ? MOBILE_MAXIMUM_SCREEN_SPACE_ERROR
       : DESKTOP_MAXIMUM_SCREEN_SPACE_ERROR;
     viewer.scene.verticalExaggeration = MARS_TERRAIN_VERTICAL_EXAGGERATION;
-    const initialShadowEnabled = sunShadowEnabledRef.current && mapStyleRef.current === 'optical';
-    viewer.scene.globe.enableLighting = initialShadowEnabled;
-    viewer.scene.globe.dynamicAtmosphereLighting = initialShadowEnabled;
+    // Keep the Mars globe fully opaque and sun-lit so its unlit hemisphere resolves to black.
+    viewer.scene.globe.enableLighting = true;
+    viewer.scene.globe.dynamicAtmosphereLighting = false;
     viewer.scene.globe.dynamicAtmosphereLightingFromSun = false;
     viewer.scene.globe.showGroundAtmosphere = false;
     if (viewer.scene.fog) {
@@ -1358,6 +1358,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     (viewer.scene.globe as any).showWaterEffect = false;
 
     viewer.scene.sun = new Cesium.Sun();
+    viewer.scene.sun.show = true;
     viewer.scene.moon = undefined;
 
     // Replace any custom/AI-generated space backdrop with CesiumJS's built-in Tycho-2 star
@@ -3994,14 +3995,13 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     if (!isReady) return;
     const viewer = viewerRef.current;
     if (!viewer || viewer.isDestroyed()) return;
-    const effectiveShadow = sunShadowEnabled && mapStyle === 'optical';
-    viewer.scene.globe.enableLighting = effectiveShadow;
-    viewer.scene.globe.dynamicAtmosphereLighting = effectiveShadow;
-
-    // Hide all surface imagery on Mars's night side so the shadow is fully black.
+    // Lighting stays enabled regardless of imagery style or the optional shadow UI toggle.
+    // Zero night-side imagery alpha exposes the globe's opaque black baseColor on the dark hemisphere.
+    viewer.scene.globe.enableLighting = true;
+    viewer.scene.globe.dynamicAtmosphereLighting = false;
     const imageryLayers = viewer.scene.globe.imageryLayers;
     for (let index = 0; index < imageryLayers.length; index += 1) {
-      imageryLayers.get(index).nightAlpha = effectiveShadow ? 0.0 : 1.0;
+      imageryLayers.get(index).nightAlpha = 0.0;
     }
   }, [sunShadowEnabled, mapStyle, isReady]);
 
