@@ -170,6 +170,8 @@ export interface CesiumViewer {
     removeAll: () => void;
   };
   imageryLayers: {
+    readonly length: number;
+    get: (index: number) => CesiumImageryLayer;
     addImageryProvider: (provider: unknown) => CesiumImageryLayer;
     removeAll: (destroy?: boolean) => void;
   };
