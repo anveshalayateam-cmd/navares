@@ -16,17 +16,16 @@ jobs:
 
       - name: Apply patches
         run: |
-          python3 scripts/apply_mars_edits.py || true
-          python3 scripts/hide_hud_until_ready.py
+          python3 scripts/apply_zoom_color_clouds.py
 
       - name: Commit and push
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A src/components/MarsGlobe.tsx src/components/InfoMenu.tsx src/App.tsx
+          git add -A src/components/MarsGlobe.tsx
           if git diff --staged --quiet; then
             echo "No changes"
           else
-            git commit -m "Hide HUD while globe loads; credit loading Mars image"
+            git commit -m "Min 10s loading; altitude sandy color blend; clouds fade on zoom-in"
             git push
           fi
