@@ -14,18 +14,17 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Apply patches
-        run: |
-          python3 scripts/apply_zoom_color_clouds.py
+      - name: Apply moon integration
+        run: python3 scripts/add_mars_moons.py
 
       - name: Commit and push
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A src/components/MarsGlobe.tsx
+          git add -A src/
           if git diff --staged --quiet; then
             echo "No changes"
           else
-            git commit -m "Min 10s loading; altitude sandy color blend; clouds fade on zoom-in"
+            git commit -m "Phobos & Deimos: NASA glTF models, JPL Horizons orbits, attribution"
             git push
           fi
