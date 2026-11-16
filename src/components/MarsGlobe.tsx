@@ -161,6 +161,15 @@ const PRIMARY_GLOBAL_ROVER_IDS = new Set([
   'rosalind-franklin',
 ]);
 
+interface ClimbingElevationSample {
+  latDeg: number;
+  lonDeg: number;
+  elev0: number;
+  elev4: number;
+  elev11: number;
+  elev16: number;
+}
+
 const MARS_TERRAIN_VERTICAL_EXAGGERATION = 1.0;
 
 // Astronomical starfield: CesiumJS's built-in Tycho-2 star catalog cubemap (derived from the
@@ -446,7 +455,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
       latDeg: number;
       lonDeg: number;
       elevMeters: number;
-      visualSample?: { latDeg: number; lonDeg: number; elev0: number; elev4: number; elev11: number };
+      visualSample?: { latDeg: number; lonDeg: number; elev0: number; elev4: number; elev11: number; elev16: number };
     } | null;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     pointB: {
@@ -455,7 +464,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
       latDeg: number;
       lonDeg: number;
       elevMeters: number;
-      visualSample?: { latDeg: number; lonDeg: number; elev0: number; elev4: number; elev11: number };
+      visualSample?: { latDeg: number; lonDeg: number; elev0: number; elev4: number; elev11: number; elev16: number };
     } | null;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     hoverCartesian: any | null;
@@ -465,6 +474,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
       elev0: number;
       elev4: number;
       elev11: number;
+      elev16: number;
     }>;
     previewSpanMeters: number;
     lockedVisualSamples: Array<{
@@ -473,6 +483,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
       elev0: number;
       elev4: number;
       elev11: number;
+      elev16: number;
     }>;
     lockedSpanMeters: number;
     pointAEntity: CesiumEntity | null;
@@ -531,13 +542,13 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
       latDeg: number;
       lonDeg: number;
       elevMeters: number;
-      visualSample?: { latDeg: number; lonDeg: number; elev0: number; elev4: number; elev11: number };
+      visualSample?: { latDeg: number; lonDeg: number; elev0: number; elev4: number; elev11: number; elev16: number };
     } | null;
     cornerB: {
       latDeg: number;
       lonDeg: number;
       elevMeters: number;
-      visualSample?: { latDeg: number; lonDeg: number; elev0: number; elev4: number; elev11: number };
+      visualSample?: { latDeg: number; lonDeg: number; elev0: number; elev4: number; elev11: number; elev16: number };
     } | null;
     bounds: SiteBounds | null;
     ringSamples: Array<{
@@ -546,6 +557,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
       elev0: number;
       elev4: number;
       elev11: number;
+      elev16: number;
     }>;
     ringSpanMeters: number;
     builtDetailLevel: number | null;
@@ -2291,38 +2303,71 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
       elev0: getMarsElevation(latDeg, lonDeg, 0),
       elev4: getMarsElevation(latDeg, lonDeg, 4),
       elev11: getMarsElevation(latDeg, lonDeg, 11),
+      elev16: getMarsElevation(latDeg, lonDeg, 16),
     });
     const resolveLodClimbElevMeters = (
-      sample: { elev0: number; elev4: number; elev11: number },
+      sample: { elev0: number; elev4: number; elev11: number; elev16: number },
       camHeight: number
     ) => {
-      if (camHeight < 12_000) return sample.elev11;
-      if (camHeight < 80_000) return Math.max(sample.elev4, sample.elev11);
-      return Math.max(sample.elev0, sample.elev4, sample.elev11);
+      // Level 16 is the terrain provider's maximum LOD and includes close-range rock relief.
+      // Taking the highest sampled LOD keeps the overlay above peaks while the mesh refines.
+      if (camHeight < 12_000) return Math.max(sample.elev11, sample.elev16);
+      if (camHeight < 80_000) return Math.max(sample.elev4, sample.elev11, sample.elev16);
+      return Math.max(sample.elev0, sample.elev4, sample.elev11, sample.elev16);
     };
-    const computePathClearanceMeters = (camHeight: number, segLenMeters: number) => {
+    const computePathClearanceMeters = (_camHeight: number, segLenMeters: number) => {
       const chordSag = (segLenMeters * segLenMeters) / (8 * MARS_CONSTANTS.EQUATORIAL_RADIUS);
-      return Math.max(
-        1.0,
-        Math.min(2500, chordSag * 1.25 + Math.max(camHeight * 0.0008, segLenMeters * 0.03))
+      // Clearance is based on terrain sampling/chord error, not camera altitude, so surface
+      // overlays stay close to the ground even from orbit while clearing ridges between samples.
+      return (
+        Math.max(4, Math.min(500, chordSag * 1.5 + Math.max(4, segLenMeters * 0.03))) *
+        viewer.scene.verticalExaggeration
       );
     };
+    const getVisualTerrainSampleSpacingMeters = (spanMeters: number, maxSamples = 6000) => {
+      const camHeight = getCameraHeightMeters();
+      const zoomSpacing =
+        camHeight < 12_000 ? 250 : camHeight < 80_000 ? 750 : camHeight < 350_000 ? 2_000 : 5_000;
+      return Math.max(zoomSpacing, spanMeters / Math.max(1, maxSamples));
+    };
+    const getVisualTerrainSegmentCount = (spanMeters: number, maxSamples = 6000) =>
+      Math.max(
+        24,
+        Math.min(
+          maxSamples,
+          Math.ceil(spanMeters / getVisualTerrainSampleSpacingMeters(spanMeters, maxSamples))
+        )
+      );
+    const visualPositionCache = new WeakMap<
+      ClimbingElevationSample[],
+      { lodBand: number; exaggeration: number; positions: unknown[] }
+    >();
     const buildVisualClimbingPositions = (
-      samples: Array<{
-        latDeg: number;
-        lonDeg: number;
-        elev0: number;
-        elev4: number;
-        elev11: number;
-      }>,
+      samples: ClimbingElevationSample[],
       spanMeters: number,
       clearanceMultiplier = 1.0
-    ) => {
+    ): unknown[] => {
       const camHeight = getCameraHeightMeters();
-      const segLen = spanMeters / Math.max(1, samples.length - 1);
-      const clearance = computePathClearanceMeters(camHeight, segLen) * clearanceMultiplier;
+      const lodBand = camHeight < 12_000 ? 0 : camHeight < 80_000 ? 1 : 2;
       const exag = viewer.scene.verticalExaggeration;
-      return samples.map((s) =>
+      const cached = visualPositionCache.get(samples);
+      if (cached && cached.lodBand === lodBand && cached.exaggeration === exag) {
+        return cached.positions;
+      }
+
+      let segLen = spanMeters / Math.max(1, samples.length - 1);
+      for (let i = 1; i < samples.length; i++) {
+        const previous = samples[i - 1];
+        const current = samples[i];
+        const geodesic = new Cesium.EllipsoidGeodesic(
+          Cesium.Cartographic.fromDegrees(previous.lonDeg, previous.latDeg),
+          Cesium.Cartographic.fromDegrees(current.lonDeg, current.latDeg),
+          marsEllipsoid
+        );
+        segLen = Math.max(segLen, geodesic.surfaceDistance);
+      }
+      const clearance = computePathClearanceMeters(camHeight, segLen) * clearanceMultiplier;
+      const positions = samples.map((s) =>
         Cesium.Cartesian3.fromDegrees(
           s.lonDeg,
           s.latDeg,
@@ -2330,6 +2375,8 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
           marsEllipsoid
         )
       );
+      visualPositionCache.set(samples, { lodBand, exaggeration: exag, positions });
+      return positions;
     };
 
     // Geodesic Measure Tool Entities (Minimal 7px Yellow Dots Only + Live Dashed / Locked Solid Terrain-Climbing Line)
@@ -2515,7 +2562,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
       polyline: {
         positions: [],
         width: 2,
-        arcType: Cesium.ArcType.GEODESIC,
+        arcType: Cesium.ArcType.NONE,
         material: new Cesium.PolylineDashMaterialProperty({
           color: Cesium.Color.fromCssColorString('#94A3B8').withAlpha(0.8),
           dashLength: 16,
@@ -2528,7 +2575,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
       polyline: {
         positions: [],
         width: 4,
-        arcType: Cesium.ArcType.GEODESIC,
+        arcType: Cesium.ArcType.NONE,
         material: new Cesium.PolylineGlowMaterialProperty({
           glowPower: 0.35,
           color: Cesium.Color.fromCssColorString('#10B981').withAlpha(0.95),
@@ -2543,7 +2590,12 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     const siteRectColor = Cesium.Color.fromCssColorString('#F59E0B');
 
     const buildSiteRectRingSamples = (bounds: SiteBounds) => {
-      const stepsPerEdge = 48;
+      const { widthKm, heightKm } = computeRectangleDimensionsKm(bounds);
+      const maxEdgeMeters = Math.max(widthKm, heightKm) * 1000;
+      const stepsPerEdge = Math.max(
+        48,
+        Math.min(512, Math.ceil(maxEdgeMeters / getVisualTerrainSampleSpacingMeters(maxEdgeMeters, 512)))
+      );
       const dLat = bounds.northLat - bounds.southLat;
       const dLon = getPositiveLonSpanDeg(bounds.westLon, bounds.eastLon);
       const samples: Array<{
@@ -2552,6 +2604,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
         elev0: number;
         elev4: number;
         elev11: number;
+        elev16: number;
       }> = [];
 
       for (let i = 0; i < stepsPerEdge; i++) {
@@ -2604,19 +2657,13 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
       const { widthKm, heightKm } = computeRectangleDimensionsKm(bounds);
       const maxSpanMeters = Math.max(widthKm, heightKm) * 1000;
       const camHeight = getCameraHeightMeters();
-      const gridCols = 28;
-      const gridRows = 28;
+      const cellTargetMeters =
+        camHeight < 12_000 ? 500 : camHeight < 80_000 ? 1_500 : camHeight < 350_000 ? 5_000 : 15_000;
+      const gridCols = Math.max(28, Math.min(96, Math.ceil(maxSpanMeters / cellTargetMeters)));
+      const gridRows = gridCols;
       const stride = gridCols + 1;
       const cellSegMeters = maxSpanMeters / gridCols;
-      const cellChordSag =
-        (cellSegMeters * cellSegMeters) / (8 * MARS_CONSTANTS.EQUATORIAL_RADIUS);
-      const fillClearance = Math.max(
-        0.7,
-        Math.min(
-          2500,
-          cellChordSag * 1.25 + Math.max(camHeight * 0.00065, cellSegMeters * 0.025)
-        )
-      );
+      const fillClearance = computePathClearanceMeters(camHeight, cellSegMeters);
       const exag = viewer.scene.verticalExaggeration;
 
       const positions = new Float64Array(stride * (gridRows + 1) * 3);
@@ -2829,13 +2876,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     const buildVisualClimbingArc = (cartoA: any, cartoB: any, segments: number) => {
       const geodesic = new Cesium.EllipsoidGeodesic(cartoA, cartoB, marsEllipsoid);
       const spanMeters = geodesic.surfaceDistance;
-      const samples: Array<{
-        latDeg: number;
-        lonDeg: number;
-        elev0: number;
-        elev4: number;
-        elev11: number;
-      }> = [];
+      const samples: ClimbingElevationSample[] = [];
       for (let i = 0; i <= segments; i++) {
         const frac = i / segments;
         const c =
@@ -2850,6 +2891,43 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
             Cesium.Math.toDegrees(c.longitude)
           )
         );
+      }
+      return { samples, spanMeters };
+    };
+
+    const buildTerrainFollowingPath = (
+      points: Array<{ latDeg: number; lonDeg: number }>
+    ): { samples: ClimbingElevationSample[]; spanMeters: number } => {
+      if (points.length < 2) return { samples: [], spanMeters: 0 };
+
+      const pairs: Array<{
+        start: { latDeg: number; lonDeg: number };
+        end: { latDeg: number; lonDeg: number };
+        spanMeters: number;
+      }> = [];
+      let spanMeters = 0;
+      for (let i = 1; i < points.length; i++) {
+        const start = points[i - 1];
+        const end = points[i];
+        const geodesic = new Cesium.EllipsoidGeodesic(
+          Cesium.Cartographic.fromDegrees(start.lonDeg, start.latDeg),
+          Cesium.Cartographic.fromDegrees(end.lonDeg, end.latDeg),
+          marsEllipsoid
+        );
+        pairs.push({ start, end, spanMeters: geodesic.surfaceDistance });
+        spanMeters += geodesic.surfaceDistance;
+      }
+
+      const spacingMeters = getVisualTerrainSampleSpacingMeters(spanMeters, 6000);
+      const samples: ClimbingElevationSample[] = [];
+      for (const pair of pairs) {
+        const segments = Math.max(1, Math.ceil(pair.spanMeters / spacingMeters));
+        const arc = buildVisualClimbingArc(
+          Cesium.Cartographic.fromDegrees(pair.start.lonDeg, pair.start.latDeg),
+          Cesium.Cartographic.fromDegrees(pair.end.lonDeg, pair.end.latDeg),
+          segments
+        );
+        samples.push(...arc.samples.slice(samples.length ? 1 : 0));
       }
       return { samples, spanMeters };
     };
@@ -2922,7 +3000,8 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
           20,
           getCameraDetailLevel()
         );
-        const visualArc = buildVisualClimbingArc(ms.pointA.carto, pt.carto, 80);
+        const visualSegments = getVisualTerrainSegmentCount(arc.surfaceDistanceMeters, 400);
+        const visualArc = buildVisualClimbingArc(ms.pointA.carto, pt.carto, visualSegments);
         ms.previewVisualSamples = visualArc.samples;
         ms.previewSpanMeters = visualArc.spanMeters;
         onMeasureLivePreviewChangeRef.current({
@@ -3021,22 +3100,18 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
       }
       rs.pulseRingEntities = [];
 
-      const spanMeters = result.directDistanceKm * 1000;
-      const routeDetailLevel = spanMeters < 5000 ? 11 : spanMeters < 80_000 ? 8 : 4;
-      const directOffset = Math.max(0.4, Math.min(60, spanMeters * 0.012));
-      const optimalOffset = Math.max(0.6, Math.min(80, spanMeters * 0.015));
+      const optimalOffset = Math.max(0.6, Math.min(80, result.directDistanceKm * 15));
+      const directPath = buildTerrainFollowingPath(result.directArcPoints);
+      const optimalPath = buildTerrainFollowingPath(
+        result.waypoints.map(({ latDeg, lonDeg }) => ({ latDeg, lonDeg }))
+      );
 
       if (rs.directLineEntity) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const poly = rs.directLineEntity.polyline as any;
         if (poly) {
-          const samples = result.directArcPoints.map((pt) => ({
-            latDeg: pt.latDeg,
-            lonDeg: pt.lonDeg,
-            elevationMeters: getMarsElevation(pt.latDeg, pt.lonDeg, routeDetailLevel),
-          }));
           poly.positions = new Cesium.CallbackProperty(
-            () => getTerrainPositions(samples, directOffset),
+            () => buildVisualClimbingPositions(directPath.samples, directPath.spanMeters),
             false
           );
         }
@@ -3047,13 +3122,8 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const poly = rs.optimalLineEntity.polyline as any;
         if (poly) {
-          const samples = result.waypoints.map((waypoint) => ({
-            latDeg: waypoint.latDeg,
-            lonDeg: waypoint.lonDeg,
-            elevationMeters: getMarsElevation(waypoint.latDeg, waypoint.lonDeg, routeDetailLevel),
-          }));
           poly.positions = new Cesium.CallbackProperty(
-            () => getTerrainPositions(samples, optimalOffset),
+            () => buildVisualClimbingPositions(optimalPath.samples, optimalPath.spanMeters),
             false
           );
         }
@@ -3323,9 +3393,9 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
             48,
             getCameraDetailLevel()
           );
-          const lockedVisualSegments = Math.max(
-            96,
-            Math.min(220, Math.ceil(arc.surfaceDistanceMeters / 6000))
+          const lockedVisualSegments = getVisualTerrainSegmentCount(
+            arc.surfaceDistanceMeters,
+            6000
           );
           const visualArc = buildVisualClimbingArc(
             ms.pointA.carto,
@@ -3636,8 +3706,28 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     let fpsFrameCount = 0;
     let fxaaDisabled = false;
 
+    const LOADING_MIN_MS = 10_000;
+    let initialGlobeTilesLoaded = false;
+    let loadingMinimumElapsed = false;
+    let loadingResolved = false;
+    const revealLoadingOverlay = () => {
+      if (loadingResolved || !initialGlobeTilesLoaded || !loadingMinimumElapsed) return;
+      loadingResolved = true;
+      setIsReady(true);
+      onGlobeReady?.(true);
+    };
+    const loadingElapsedMs = performance.now() - loadingStartedAtRef.current;
+    const loadingTimer = window.setTimeout(() => {
+      loadingMinimumElapsed = true;
+      revealLoadingOverlay();
+    }, Math.max(0, LOADING_MIN_MS - loadingElapsedMs));
+
     const removePostRender = viewer.scene.postRender.addEventListener(() => {
       if (viewer.isDestroyed()) return;
+      if (!initialGlobeTilesLoaded && (viewer.scene.globe as any).tilesLoaded === true) {
+        initialGlobeTilesLoaded = true;
+        revealLoadingOverlay();
+      }
 
       const now = performance.now();
 
@@ -3902,6 +3992,9 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
 
         const currentDetail = getCameraDetailLevel();
         if (sr.bounds && sr.builtDetailLevel !== currentDetail) {
+          sr.ringSamples = buildSiteRectRingSamples(sr.bounds);
+          const { widthKm, heightKm } = computeRectangleDimensionsKm(sr.bounds);
+          sr.ringSpanMeters = Math.max(widthKm, heightKm) * 1000;
           rebuildSiteFillPrimitive(sr.bounds, currentDetail);
         }
       }
@@ -3969,21 +4062,9 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     };
     rafId = requestAnimationFrame(tickOrbit);
 
-    // Keep the loading image up for at least 10s; if the globe is slower, wait for it.
-    const LOADING_MIN_MS = 10_000;
-    const readyAt = performance.now();
-    const reveal = () => {
-      setIsReady(true);
-      onGlobeReady?.(true);
-    };
-    const elapsed = readyAt - (loadingStartedAtRef.current ?? readyAt);
-    if (elapsed >= LOADING_MIN_MS) {
-      reveal();
-    } else {
-      window.setTimeout(reveal, LOADING_MIN_MS - elapsed);
-    }
 
     return () => {
+      window.clearTimeout(loadingTimer);
       stopContinuousZoomInternal();
       cancelAnimationFrame(rafId);
       if (cameraAnimationFrameRef.current !== null) {
@@ -4467,7 +4548,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
               className="absolute inset-0 w-full h-full object-cover object-center"
             />
             <div className="relative z-10 flex flex-col items-center justify-center gap-4">
-              <p className="font-display text-lg sm:text-xl font-semibold tracking-wide text-white drop-shadow-sm">
+              <p className="font-display text-lg sm:text-xl font-semibold tracking-wide rounded-md bg-white/80 px-3 py-1 text-black shadow-sm">
                 ILoveMars
               </p>
               <div className="w-12 h-12 rounded-full border-[3px] border-white/35 border-t-white animate-spin" />
