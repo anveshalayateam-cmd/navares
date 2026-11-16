@@ -57838,7 +57838,6 @@ const LOCATION_AREA_SPECS: Record<string, LocationAreaSpec> = {
   'argyre-planitia': { semiMajorKm: 900, semiMinorKm: 750, azimuthDeg: 85, dimensionLabel: '1,800 × 1,500 km impact basin' },
   'korolev-crater': { semiMajorKm: 41, semiMinorKm: 41, azimuthDeg: 0, dimensionLabel: '82 km ice-filled crater' },
   'south-polar-cap': { semiMajorKm: 500, semiMinorKm: 500, azimuthDeg: 0, dimensionLabel: '1,000 km Planum Australe ice plateau', isPolarCap: true },
-  'prometheus-mons': { semiMajorKm: 180, semiMinorKm: 110, azimuthDeg: 25, dimensionLabel: '360 × 220 km southern polar-margin research zone' },
   'noctis-labyrinths': { semiMajorKm: 595, semiMinorKm: 260, azimuthDeg: 95, dimensionLabel: '1,190 × 520 km fractured canyon head' },
   'pavonis-skylight': { semiMajorKm: 0.9, semiMinorKm: 0.9, azimuthDeg: 0, dimensionLabel: '1.8 km pit crater / lava tube' },
   'airy-zero': { semiMajorKm: 0.25, semiMinorKm: 0.25, azimuthDeg: 0, dimensionLabel: '0.5 km prime meridian crater' },

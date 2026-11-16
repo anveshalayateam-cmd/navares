@@ -1,4 +1,5 @@
-import { BoxSelect, Droplets, Mountain, Radiation, RotateCcw, Thermometer, X } from 'lucide-react';
+import { BoxSelect, ChevronDown, ChevronUp, Droplets, Mountain, Radiation, RotateCcw, Thermometer, X } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { formatDistance, formatLatLon, formatSurfaceElevation } from '../utils/marsMath';
 import { SiteAnalysisResult } from '../utils/marsWaterModel';
 
@@ -44,6 +45,12 @@ export function SiteAnalysisOverlay({
   onReselectArea,
   onCloseAnalysis,
 }: SiteAnalysisOverlayProps) {
+  const [collapsed, setCollapsed] = useState(false);
+
+  useEffect(() => {
+    setCollapsed(false);
+  }, [result?.centerLatDeg, result?.centerLonDeg, result?.areaKm2]);
+
   if (!siteAnalysisMode && !result) return null;
 
   const score = result?.habitability.overallScore ?? 0;
@@ -73,28 +80,30 @@ export function SiteAnalysisOverlay({
             };
 
   return (
-    <>
+    <div className="pointer-events-none fixed top-[60px] sm:top-[68px] left-2.5 right-2.5 sm:right-auto sm:left-4 z-20 flex sm:w-[min(24rem,calc(100vw-2rem))] max-h-[calc(100dvh-13.5rem)] md:max-h-[calc(100dvh-9.5rem)] flex-col gap-2">
       {siteAnalysisMode && (
         <div
           role="status"
-          className="pointer-events-auto fixed top-[68px] left-4 z-20 flex flex-wrap items-center gap-2.5 rounded-full border border-amber-400/35 bg-[#0B0F17]/88 px-3.5 py-2 backdrop-blur-md shadow-2xl max-w-[calc(100vw-2rem)]"
+          className="pointer-events-auto flex shrink-0 flex-wrap items-center justify-between gap-2 rounded-2xl border border-amber-400/35 bg-[#0B0F17]/90 px-3 py-1.5 sm:px-3.5 sm:py-2 backdrop-blur-md shadow-2xl"
         >
-          <BoxSelect className="h-3.5 w-3.5 shrink-0 text-amber-300" aria-hidden="true" />
-          <span className="text-xs text-slate-100">
-            {result
-              ? 'Site analysis complete · Click corner on Mars to analyse another area'
-              : hasFirstCorner
-                ? `Click opposite corner to finish rectangle${
-                    livePreview
-                      ? ` · ${formatDistance(livePreview.widthKm * 1000)} × ${formatDistance(livePreview.heightKm * 1000)}`
-                      : ''
-                  }`
-                : 'Click first corner on Mars to select a rectangular site'}
-          </span>
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <BoxSelect className="h-3.5 w-3.5 shrink-0 text-amber-300" aria-hidden="true" />
+            <span className="text-[11px] sm:text-xs text-slate-100 leading-snug">
+              {result
+                ? 'Site analysis complete · Click corner on Mars to analyse another area'
+                : hasFirstCorner
+                  ? `Click opposite corner to finish rectangle${
+                      livePreview
+                        ? ` · ${formatDistance(livePreview.widthKm * 1000)} × ${formatDistance(livePreview.heightKm * 1000)}`
+                        : ''
+                    }`
+                  : 'Click first corner on Mars to select a rectangular site'}
+            </span>
+          </div>
           <button
             type="button"
             onClick={onCloseAnalysis}
-            className="inline-flex items-center gap-1 rounded-full border border-white/15 bg-white/10 px-2.5 py-0.5 text-[11px] font-medium text-slate-200 transition-colors hover:bg-white/20 hover:text-white cursor-pointer whitespace-nowrap"
+            className="inline-flex shrink-0 items-center gap-1 rounded-full border border-white/15 bg-white/10 px-2.5 py-0.5 text-[11px] font-medium text-slate-200 transition-colors hover:bg-white/20 hover:text-white cursor-pointer whitespace-nowrap"
           >
             <X className="h-3 w-3" aria-hidden="true" />
             <span>Exit</span>
@@ -105,14 +114,16 @@ export function SiteAnalysisOverlay({
       {result && (
         <aside
           aria-label="Martian site habitability analysis"
-          className={`pointer-events-auto fixed left-4 z-20 flex w-[385px] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-2xl border border-amber-400/30 bg-[#0B0F17]/90 backdrop-blur-md shadow-2xl ${
-            siteAnalysisMode
-              ? 'top-[116px] max-h-[calc(100vh-14.5rem)]'
-              : 'top-[68px] max-h-[calc(100vh-12rem)]'
+          className={`pointer-events-auto flex flex-col overflow-hidden rounded-2xl border border-amber-400/30 bg-[#0B0F17]/90 backdrop-blur-md shadow-2xl ${
+            collapsed ? 'shrink-0' : 'min-h-0 flex-1'
           }`}
         >
           {/* Header */}
-          <div className="flex items-start justify-between gap-2 border-b border-white/10 px-4 py-3">
+          <div
+            className={`flex shrink-0 items-start justify-between gap-2 px-3.5 py-2.5 sm:px-4 sm:py-3 ${
+              collapsed ? '' : 'border-b border-white/10'
+            }`}
+          >
             <div className="flex items-start gap-2.5 min-w-0">
               <BoxSelect className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" aria-hidden="true" />
               <div className="min-w-0">
@@ -120,13 +131,38 @@ export function SiteAnalysisOverlay({
                   Site Habitability Analysis
                 </h3>
                 <p className="truncate font-mono-tabular text-[11px] text-slate-400">
-                  {formatLatLon(result.centerLatDeg, result.centerLonDeg, 2)} ·{' '}
-                  {formatAreaKm2(result.areaKm2)}
+                  {collapsed ? (
+                    <>
+                      <span className={`font-semibold ${tierColors.accent}`}>
+                        {result.habitability.overallScore}/100
+                      </span>{' '}
+                      · {formatAreaKm2(result.areaKm2)} · {result.water.meanWtPct.toFixed(1)}% H₂O
+                    </>
+                  ) : (
+                    <>
+                      {formatLatLon(result.centerLatDeg, result.centerLonDeg, 2)} ·{' '}
+                      {formatAreaKm2(result.areaKm2)}
+                    </>
+                  )}
                 </p>
               </div>
             </div>
 
             <div className="flex items-center gap-1 shrink-0">
+              <button
+                type="button"
+                onClick={() => setCollapsed((prev) => !prev)}
+                aria-expanded={!collapsed}
+                aria-label={collapsed ? 'Expand site habitability analysis' : 'Collapse site habitability analysis'}
+                title={collapsed ? 'Expand analysis' : 'Collapse analysis'}
+                className="flex h-7 w-7 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-white/10 hover:text-white cursor-pointer"
+              >
+                {collapsed ? (
+                  <ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />
+                ) : (
+                  <ChevronUp className="h-3.5 w-3.5" aria-hidden="true" />
+                )}
+              </button>
               <button
                 type="button"
                 onClick={onReselectArea}
@@ -147,8 +183,9 @@ export function SiteAnalysisOverlay({
             </div>
           </div>
 
-          {/* Scrollable Body */}
-          <div className="hud-scroll flex-1 overflow-y-auto px-4 py-3.5 space-y-3.5 text-xs">
+          {!collapsed && (
+            /* Scrollable Body */
+            <div className="hud-scroll min-h-0 flex-1 overflow-y-auto px-3.5 py-3 sm:px-4 sm:py-3.5 space-y-3 sm:space-y-3.5 text-xs">
             {/* Habitability Condition Hero Score */}
             <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
               <div className="flex items-center justify-between gap-3">
@@ -323,8 +360,9 @@ export function SiteAnalysisOverlay({
               </ul>
             </div>
           </div>
+          )}
         </aside>
       )}
-    </>
+    </div>
   );
 }

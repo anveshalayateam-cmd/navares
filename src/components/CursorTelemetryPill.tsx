@@ -58,13 +58,13 @@ export function CursorTelemetryPill({ telemetry, cameraTelemetry }: CursorTeleme
   return (
     <footer
       aria-label="Mars map scale, camera altitude, and cursor coordinates"
-      className="pointer-events-none fixed inset-x-0 bottom-0 z-30 flex h-9 items-center justify-between gap-2 border-t border-white/10 bg-[#080c13]/90 px-3 text-[9px] text-slate-300 shadow-[0_-8px_24px_rgba(0,0,0,.22)] backdrop-blur-xl sm:px-4 sm:text-[10px]"
+      className="pointer-events-none fixed inset-x-0 bottom-0 z-30 flex h-8 sm:h-9 items-center justify-between gap-1.5 sm:gap-2 border-t border-white/10 bg-[#080c13]/90 px-2.5 text-[9px] text-slate-300 shadow-[0_-8px_24px_rgba(0,0,0,.22)] backdrop-blur-xl sm:px-4 sm:text-[10px]"
     >
-      <div className="flex min-w-0 items-center gap-2 sm:gap-2.5">
+      <div className="flex min-w-0 shrink-0 items-center gap-1.5 sm:gap-2.5">
         <span className="hidden font-mono-tabular text-slate-500 sm:inline">MARS</span>
         <div className="flex shrink-0 flex-col items-center gap-0.5" aria-label={`Map scale ${formatScaleDistance(scaleDistance)}`}>
-          <span className="font-mono-tabular text-[9px] leading-none text-slate-200">{formatScaleDistance(scaleDistance)}</span>
-          <div className="relative h-1.5 border-t border-slate-200" style={{ width: `${scaleWidth}px` }}>
+          <span className="font-mono-tabular text-[8px] sm:text-[9px] leading-none text-slate-200">{formatScaleDistance(scaleDistance)}</span>
+          <div className="relative h-1.5 border-t border-slate-200 max-w-[72px] sm:max-w-none" style={{ width: `${scaleWidth}px` }}>
             <span className="absolute left-0 top-[-2px] h-1.5 border-l border-slate-200" />
             <span className="absolute right-0 top-[-2px] h-1.5 border-r border-slate-200" />
           </div>
@@ -72,7 +72,9 @@ export function CursorTelemetryPill({ telemetry, cameraTelemetry }: CursorTeleme
       </div>
 
       <div className="shrink-0 font-mono-tabular text-slate-400">
-        Camera: <span className="text-cyan-200">{formatAltitude(cameraTelemetry?.altitudeAboveEllipsoidMeters ?? NaN)}</span>
+        <span className="hidden sm:inline">Camera: </span>
+        <span className="sm:hidden">Cam: </span>
+        <span className="text-cyan-200">{formatAltitude(cameraTelemetry?.altitudeAboveEllipsoidMeters ?? NaN)}</span>
       </div>
 
       <div className="min-w-0 truncate text-right font-mono-tabular">
@@ -83,7 +85,10 @@ export function CursorTelemetryPill({ telemetry, cameraTelemetry }: CursorTeleme
             <span className="text-cyan-300">{formatSurfaceElevation(telemetry.elevationMeters)}</span>
           </span>
         ) : (
-          <span className="text-slate-500">Move cursor over Mars for coordinates · MOLA elevation</span>
+          <span className="text-slate-500">
+            <span className="hidden sm:inline">Move cursor over Mars for coordinates · MOLA elevation</span>
+            <span className="sm:hidden">Tap globe for coords · MOLA</span>
+          </span>
         )}
       </div>
     </footer>

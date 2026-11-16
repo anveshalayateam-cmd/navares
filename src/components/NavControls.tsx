@@ -141,9 +141,9 @@ export function NavControls({
   return (
     <div
       aria-label="Map navigation controls"
-      className="pointer-events-auto fixed bottom-14 right-4 z-20 flex flex-col items-end gap-2"
+      className="pointer-events-auto fixed bottom-[7.25rem] right-2.5 md:bottom-14 md:right-4 z-20 flex max-h-[calc(100dvh-11.5rem)] md:max-h-[calc(100dvh-8.5rem)] flex-col items-end gap-1.5 md:gap-2"
     >
-      <div className="flex flex-col items-end gap-2">
+      <div className="hud-scroll flex flex-col items-end gap-1.5 md:gap-2 overflow-y-auto pr-0.5">
 
         <button
           type="button"
@@ -152,10 +152,10 @@ export function NavControls({
           aria-label="Optimal Survival Route"
           title="Optimal Survival Route"
           style={{ transition: 'all 0.25s ease' }}
-          className={`group flex h-10 items-center justify-end overflow-hidden rounded-2xl border backdrop-blur-md shadow-2xl cursor-pointer whitespace-nowrap ${
+          className={`group flex h-9 md:h-10 shrink-0 items-center justify-end overflow-hidden rounded-2xl border backdrop-blur-md shadow-2xl cursor-pointer whitespace-nowrap ${
             routeMode
-              ? 'w-[198px] px-3 gap-2 border-emerald-400/60 bg-emerald-500/25 text-emerald-200'
-              : 'w-10 px-[11px] gap-0 hover:w-[198px] hover:px-3 hover:gap-2 border-white/15 bg-[#0B0F17]/82 text-slate-200 hover:bg-white/10 hover:text-white'
+              ? 'w-[186px] md:w-[198px] px-3 gap-2 border-emerald-400/60 bg-emerald-500/25 text-emerald-200'
+              : 'w-9 md:w-10 px-[9px] md:px-[11px] gap-0 hover:w-[198px] hover:px-3 hover:gap-2 border-white/15 bg-[#0B0F17]/82 text-slate-200 hover:bg-white/10 hover:text-white'
           }`}
         >
           <span
@@ -177,7 +177,7 @@ export function NavControls({
           onClick={onToggleMeasure}
           aria-label="Measure surface distance"
           title="Measure Distance"
-          className={`flex h-10 w-10 items-center justify-center rounded-2xl border backdrop-blur-md shadow-2xl transition-colors cursor-pointer ${
+          className={`flex h-9 w-9 md:h-10 md:w-10 shrink-0 items-center justify-center rounded-2xl border backdrop-blur-md shadow-2xl transition-colors cursor-pointer ${
             measureMode
               ? 'border-cyan-400/60 bg-cyan-500/25 text-cyan-200'
               : 'border-white/15 bg-[#0B0F17]/82 text-slate-200 hover:bg-white/10 hover:text-white'
@@ -202,7 +202,7 @@ export function NavControls({
             cursor: isAltitudeLocked ? 'not-allowed' : 'pointer',
             transition: 'all 0.2s ease',
           }}
-          className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full border border-cyan-300/25 bg-[#0B0F17]/82 text-[11px] font-bold tracking-wide text-cyan-100 shadow-2xl backdrop-blur-md transition-all hover:bg-cyan-400/15 hover:text-white disabled:cursor-not-allowed disabled:border-slate-500/20 disabled:bg-slate-700/25 disabled:text-slate-500 disabled:opacity-40 disabled:shadow-none disabled:hover:bg-slate-700/25"
+          className="flex h-9 w-9 md:h-10 md:w-10 shrink-0 cursor-pointer items-center justify-center rounded-full border border-cyan-300/25 bg-[#0B0F17]/82 text-[10px] md:text-[11px] font-bold tracking-wide text-cyan-100 shadow-2xl backdrop-blur-md transition-all hover:bg-cyan-400/15 hover:text-white disabled:cursor-not-allowed disabled:border-slate-500/20 disabled:bg-slate-700/25 disabled:text-slate-500 disabled:opacity-40 disabled:shadow-none disabled:hover:bg-slate-700/25"
         >
           {viewToggleLabel}
         </button>
@@ -214,7 +214,7 @@ export function NavControls({
           aria-label="Reset global Mars orbit view"
           title="Reset Globe (R)"
           style={{ transition: 'all 0.25s ease' }}
-          className="group/reset flex h-10 w-10 items-center justify-end overflow-hidden rounded-full border border-white/15 bg-[#0B0F17]/85 px-[11px] gap-0 text-slate-200 shadow-2xl backdrop-blur-md hover:w-[132px] hover:gap-2 hover:px-3.5 hover:border-cyan-400/45 hover:bg-cyan-500/15 hover:text-cyan-100 active:scale-95 cursor-pointer whitespace-nowrap"
+          className="group/reset flex h-9 w-9 md:h-10 md:w-10 shrink-0 items-center justify-end overflow-hidden rounded-full border border-white/15 bg-[#0B0F17]/85 px-[9px] md:px-[11px] gap-0 text-slate-200 shadow-2xl backdrop-blur-md hover:w-[132px] hover:gap-2 hover:px-3.5 hover:border-cyan-400/45 hover:bg-cyan-500/15 hover:text-cyan-100 active:scale-95 cursor-pointer whitespace-nowrap"
         >
           <span
             style={{ transition: 'all 0.25s ease' }}
@@ -227,14 +227,14 @@ export function NavControls({
       </div>
 
       {/* Standalone Compass Button with Google Earth Tilt & Heading Popover */}
-      <div ref={compassRef} className="relative">
+      <div ref={compassRef} className="relative shrink-0">
         <button
           type="button"
           onClick={() => setCompassOpen((open) => !open)}
           aria-label={`Open compass controls; heading ${roundedHeading} degrees`}
             aria-expanded={compassOpen}
             title="Compass, Tilt & Heading"
-            className={`flex h-10 w-10 items-center justify-center rounded-full border backdrop-blur-md shadow-2xl transition-all cursor-pointer ${
+            className={`flex h-9 w-9 md:h-10 md:w-10 items-center justify-center rounded-full border backdrop-blur-md shadow-2xl transition-all cursor-pointer ${
               compassOpen
                 ? 'border-cyan-400/70 bg-cyan-500/25 text-white ring-2 ring-cyan-400/25'
                 : 'border-white/15 bg-[#0B0F17]/85 text-slate-200 hover:border-white/30 hover:bg-white/10 hover:text-white'
@@ -246,7 +246,7 @@ export function NavControls({
         {compassOpen && (
           <section
             aria-label="Compass tilt and heading controls"
-            className="absolute bottom-0 right-13 w-[min(19.5rem,calc(100vw-5.5rem))] rounded-2xl border border-white/15 bg-[#0B0F17]/95 p-4 text-slate-100 shadow-2xl backdrop-blur-xl"
+            className="hud-scroll absolute bottom-0 right-11 md:right-13 max-h-[calc(100dvh-10rem)] w-[min(19.5rem,calc(100vw-4.5rem))] overflow-y-auto rounded-2xl border border-white/15 bg-[#0B0F17]/95 p-3.5 md:p-4 text-slate-100 shadow-2xl backdrop-blur-xl"
           >
             <div className="mb-3 flex items-center justify-end">
               <button
@@ -351,7 +351,7 @@ export function NavControls({
         <div
           onWheel={(event) => onWheelZoom(event.deltaY)}
           title="Hold + or - for continuous zoom, or scroll with mouse / trackpad"
-          className="flex flex-col overflow-hidden rounded-2xl border border-white/15 bg-[#0B0F17]/82 backdrop-blur-md shadow-2xl"
+          className="flex shrink-0 flex-col overflow-hidden rounded-2xl border border-white/15 bg-[#0B0F17]/82 backdrop-blur-md shadow-2xl"
         >
           <button
             type="button"
@@ -371,7 +371,7 @@ export function NavControls({
             onBlur={onStopZoom}
             aria-label="Hold to zoom in continuously"
             title="Press and hold to zoom in"
-            className="flex h-10 w-10 select-none touch-none items-center justify-center border-b border-white/10 text-slate-200 transition-colors hover:bg-white/10 hover:text-white active:bg-cyan-500/20 active:text-cyan-100 cursor-pointer"
+            className="flex h-9 w-9 md:h-10 md:w-10 select-none touch-none items-center justify-center border-b border-white/10 text-slate-200 transition-colors hover:bg-white/10 hover:text-white active:bg-cyan-500/20 active:text-cyan-100 cursor-pointer"
           >
             <Plus className="h-4 w-4" aria-hidden="true" />
           </button>
@@ -393,7 +393,7 @@ export function NavControls({
             onBlur={onStopZoom}
             aria-label="Hold to zoom out continuously"
             title="Press and hold to zoom out"
-            className="flex h-10 w-10 select-none touch-none items-center justify-center text-slate-200 transition-colors hover:bg-white/10 hover:text-white active:bg-cyan-500/20 active:text-cyan-100 cursor-pointer"
+            className="flex h-9 w-9 md:h-10 md:w-10 select-none touch-none items-center justify-center text-slate-200 transition-colors hover:bg-white/10 hover:text-white active:bg-cyan-500/20 active:text-cyan-100 cursor-pointer"
           >
             <Minus className="h-4 w-4" aria-hidden="true" />
           </button>

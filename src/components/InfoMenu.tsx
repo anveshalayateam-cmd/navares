@@ -14,10 +14,14 @@ const DATA_ATTRIBUTIONS = [
     description: (
       <>
         NASA Mars Trek / Viking Orbiter MDIM 2.1 Colorized Global Mosaic (
-        <span className="font-mono-tabular text-slate-200">232m/px</span>) &amp; Mars Reconnaissance
-        Orbiter (MRO) CTX Global Mosaic (
-        <span className="font-mono-tabular text-slate-200">6m/px</span>) —{' '}
-        <em className="text-slate-300">NASA / JPL-Caltech / USGS Astrogeology Science Center</em>.
+        <span className="font-mono-tabular text-slate-200">232m/px</span>) &amp; Caltech Bruce
+        Murray Lab Global MRO CTX Mosaic V01 (
+        <span className="font-mono-tabular text-slate-200">5m/px</span>,{' '}
+        <span className="font-mono-tabular text-slate-200">murray-lab.caltech.edu/CTX/</span>) —{' '}
+        <em className="text-slate-300">
+          NASA / JPL / MSSS / Caltech Murray Lab / USGS Astrogeology / Esri
+        </em>
+        .
       </>
     ),
   },
@@ -36,12 +40,16 @@ const DATA_ATTRIBUTIONS = [
     ),
   },
   {
-    title: 'MGS Crustal Magnetic Field & MOLA Topography',
+    title: '3D Mars Topography (HRSC + MOLA Blended DEM) & Magnetic Field',
     description: (
       <>
-        Mars Global Surveyor (MGS) Mars Orbiter Laser Altimeter (MOLA) Digital Elevation Model (
-        <span className="font-mono-tabular text-slate-200">463m/px</span>) &amp; crustal magnetic
-        anomaly maps — <em className="text-slate-300">NASA Goddard Space Flight Center / USGS</em>.
+        3D terrain elevations stream directly from the NASA GSFC MOLA + ESA DLR MEX HRSC Global
+        Blended Digital Elevation Model v2 (
+        <span className="font-mono-tabular text-slate-200">MDEM200M</span>,{' '}
+        <span className="font-mono-tabular text-slate-200">200m/px</span>) aligned with the Murray
+        Lab CTX V01 globe at 1:1 true scale, paired with site-geology boulder/regolith micro-relief
+        at close surface zoom &amp; MGS magnetic anomaly maps —{' '}
+        <em className="text-slate-300">NASA GSFC / DLR / ESA / USGS Astrogeology / Esri</em>.
       </>
     ),
   },
@@ -280,7 +288,7 @@ export function InfoMenu({ hasTargetCardOpen }: InfoMenuProps) {
       {/* Top-Right 3-Dot Menu Container */}
       <div
         ref={menuContainerRef}
-        className={`fixed top-4 right-4 z-40 flex items-center transition-all duration-200 ease-out ${
+        className={`fixed top-3 right-2.5 sm:top-4 sm:right-4 z-40 flex items-center transition-all duration-200 ease-out ${
           hasTargetCardOpen
             ? 'md:-translate-x-[367px] max-md:pointer-events-none max-md:opacity-0 max-md:scale-95 pointer-events-auto'
             : 'translate-x-0 opacity-100 scale-100 pointer-events-auto'
@@ -296,7 +304,7 @@ export function InfoMenu({ hasTargetCardOpen }: InfoMenuProps) {
             aria-expanded={menuOpen}
             aria-label="Open menu for astronaut rescue, details, and about"
             title="Menu"
-            className={`flex h-10 w-10 items-center justify-center rounded-full border backdrop-blur-md shadow-2xl transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400/75 ${
+            className={`flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-full border backdrop-blur-md shadow-2xl transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400/75 ${
               menuOpen
                 ? 'border-orange-400/50 bg-[#0B0F17]/92 text-white'
                 : 'border-white/15 bg-[#0B0F17]/82 text-slate-200 hover:bg-white/10 hover:text-white'
@@ -309,7 +317,7 @@ export function InfoMenu({ hasTargetCardOpen }: InfoMenuProps) {
             <div
               role="menu"
               aria-label="Atlas information menu"
-              className="absolute right-0 mt-2 w-48 origin-top-right rounded-2xl border border-white/15 bg-[#0B0F17]/92 p-1.5 backdrop-blur-md shadow-2xl"
+              className="hud-scroll absolute right-0 mt-2 max-h-[calc(100dvh-5rem)] w-48 max-w-[calc(100vw-1.5rem)] origin-top-right overflow-y-auto rounded-2xl border border-white/15 bg-[#0B0F17]/92 p-1.5 backdrop-blur-md shadow-2xl"
             >
               <button
                 type="button"
@@ -353,18 +361,18 @@ export function InfoMenu({ hasTargetCardOpen }: InfoMenuProps) {
           aria-labelledby="info-modal-title"
           onClick={() => setActiveModal(null)}
           onPointerDown={(e) => e.stopPropagation()}
-          className="pointer-events-auto fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+          className="pointer-events-auto fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-2.5 sm:p-4 backdrop-blur-sm"
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className={`relative flex max-h-[calc(100vh-2.5rem)] w-full flex-col overflow-hidden rounded-2xl border border-white/15 bg-[#0B0F17]/94 text-slate-100 backdrop-blur-xl shadow-2xl ${
+            className={`relative flex max-h-[calc(100dvh-1.5rem)] sm:max-h-[calc(100dvh-2.5rem)] w-full flex-col overflow-hidden rounded-2xl border border-white/15 bg-[#0B0F17]/94 text-slate-100 backdrop-blur-xl shadow-2xl ${
               activeModal === 'rescue' ? 'max-w-2xl' : 'max-w-xl'
             }`}
           >
             {/* Modal Header */}
-            <div className="flex items-center justify-between gap-4 border-b border-white/10 px-5 py-4">
-              <div>
-                <p className="text-[11px] font-medium tracking-wide text-amber-300/90">
+            <div className="flex shrink-0 items-center justify-between gap-3 sm:gap-4 border-b border-white/10 px-4 py-3 sm:px-5 sm:py-4">
+              <div className="min-w-0">
+                <p className="truncate text-[10px] sm:text-[11px] font-medium tracking-wide text-amber-300/90">
                   {activeModal === 'rescue'
                     ? 'Original Non-GPS EVA Survival Hardware Concept'
                     : activeModal === 'details'
@@ -373,7 +381,7 @@ export function InfoMenu({ hasTargetCardOpen }: InfoMenuProps) {
                 </p>
                 <h2
                   id="info-modal-title"
-                  className="mt-0.5 font-display text-base sm:text-lg font-bold tracking-tight text-white"
+                  className="mt-0.5 font-display text-sm sm:text-lg font-bold tracking-tight text-white"
                 >
                   {activeModal === 'rescue'
                     ? 'Martian Surface Rescue Protocol: Radio Direction-Finding (RDF) Homing System'
@@ -387,21 +395,21 @@ export function InfoMenu({ hasTargetCardOpen }: InfoMenuProps) {
                 type="button"
                 onClick={() => setActiveModal(null)}
                 aria-label="Close modal"
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-white/10 hover:text-white cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400/75"
+                className="flex h-9 w-9 sm:h-10 sm:w-10 shrink-0 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-white/10 hover:text-white cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400/75"
               >
                 <X className="h-4 w-4" aria-hidden="true" />
               </button>
             </div>
 
             {/* Modal Body */}
-            <div className="hud-scroll flex-1 overflow-y-auto px-5 py-4 space-y-4">
+            <div className="hud-scroll min-h-0 flex-1 overflow-y-auto px-4 py-3.5 sm:px-5 sm:py-4 space-y-4">
               {activeModal === 'rescue' ? (
                 <>
                   {/* Interactive Detachable Spacesuit RDF Remote Mockup & Simulator */}
-                  <div className="rounded-2xl border border-emerald-400/25 bg-[#060B0E]/90 p-4 space-y-4">
+                  <div className="rounded-2xl border border-emerald-400/25 bg-[#060B0E]/90 p-3 sm:p-4 space-y-3 sm:space-y-4">
                     <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 pb-2.5">
                       <div className="flex items-center gap-2">
-                        <ShieldCheck className="h-4 w-4 text-emerald-400" aria-hidden="true" />
+                        <ShieldCheck className="h-4 w-4 shrink-0 text-emerald-400" aria-hidden="true" />
                         <span className="text-xs font-semibold text-white">
                           Interactive Preview: Detachable Spacesuit RDF Remote
                         </span>
@@ -413,7 +421,7 @@ export function InfoMenu({ hasTargetCardOpen }: InfoMenuProps) {
 
                     <div className="grid grid-cols-1 md:grid-cols-[248px_1fr] gap-4 items-center">
                       {/* Ruggedized EVA Handheld/Wrist Remote Hardware SVG + Live Digital Screen */}
-                      <div className="mx-auto w-[240px] select-none">
+                      <div className="mx-auto w-full max-w-[240px] select-none">
                         {/* Dual Top RDF Whip Antennas */}
                         <div className="flex justify-between px-9">
                           <div className="flex flex-col items-center">
@@ -724,9 +732,10 @@ export function InfoMenu({ hasTargetCardOpen }: InfoMenuProps) {
                       were generated with AI assistance.
                     </p>
                     <p className="text-xs sm:text-[13px] leading-relaxed text-amber-100/95">
-                      Disclaimer: 3D terrain heights, vertical exaggeration, and surface location
-                      markers are visual approximations for mission planning simulation and may
-                      differ from actual Martian topography and coordinates.
+                      Disclaimer: 3D terrain relief runs at 1:1 planetary scale with procedurally
+                      synthesized boulder/regolith micro-texture below orbital limits; surface
+                      markers are visual approximations for mission planning and may differ from
+                      local spacecraft telemetry.
                     </p>
                   </div>
 

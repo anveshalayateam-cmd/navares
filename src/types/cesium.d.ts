@@ -19,8 +19,6 @@ export interface CesiumEntity {
 export interface CesiumImageryLayer {
   show: boolean;
   alpha: number;
-  dayAlpha?: number;
-  nightAlpha?: number;
   hue?: number;
   contrast: number;
   brightness: number;
@@ -28,6 +26,8 @@ export interface CesiumImageryLayer {
   saturation: number;
   magnificationFilter?: unknown;
   minificationFilter?: unknown;
+  dayAlpha?: number;
+  nightAlpha?: number;
   imageryProvider: {
     errorEvent?: {
       addEventListener: (cb: (err: unknown) => void) => () => void;
@@ -70,6 +70,9 @@ export interface CesiumViewer {
       atmosphereBrightnessShift?: number;
       atmosphereRayleighScaleHeight?: number;
       atmosphereMieScaleHeight?: number;
+      atmosphereRayleighCoefficient?: unknown;
+      atmosphereMieCoefficient?: unknown;
+      atmosphereMieAnisotropy?: number;
       depthTestAgainstTerrain: boolean;
       getHeight?: (cartographic: unknown) => number | undefined;
       pick: (ray: unknown, scene: unknown) => unknown;
@@ -89,6 +92,9 @@ export interface CesiumViewer {
       brightnessShift: number;
       atmosphereRayleighScaleHeight?: number;
       atmosphereMieScaleHeight?: number;
+      atmosphereRayleighCoefficient?: unknown;
+      atmosphereMieCoefficient?: unknown;
+      atmosphereMieAnisotropy?: number;
       atmosphereLightIntensity?: number;
       perFragmentAtmosphere?: boolean;
     };
@@ -129,7 +135,9 @@ export interface CesiumViewer {
     };
     light?: unknown;
     highDynamicRange: boolean;
-    sun?: unknown;
+    sun?: {
+      show?: boolean;
+    };
     moon?: unknown;
     backgroundColor: unknown;
     skyBox?: {
@@ -144,6 +152,7 @@ export interface CesiumViewer {
     position: unknown;
     positionWC: unknown;
     directionWC: unknown;
+    viewMatrix: unknown;
     heading: number;
     pitch: number;
     roll: number;
@@ -170,8 +179,8 @@ export interface CesiumViewer {
     removeAll: () => void;
   };
   imageryLayers: {
-    readonly length: number;
-    get: (index: number) => CesiumImageryLayer;
+    length: number;
+    get: (index: number) => CesiumImageryLayer | undefined;
     addImageryProvider: (provider: unknown) => CesiumImageryLayer;
     removeAll: (destroy?: boolean) => void;
   };

@@ -90,10 +90,14 @@ export function SearchBar({ onSelectAndFly, liveRovers, customPins = [] }: Searc
     <div
       id="searchContainer"
       ref={containerRef}
-      className="pointer-events-auto fixed top-4 left-4 z-30 w-[345px] max-w-[calc(100vw-2rem)]"
+      className={`pointer-events-auto fixed top-3 left-2.5 sm:top-4 sm:left-4 z-30 transition-[width] duration-150 ${
+        isOpen
+          ? 'w-[min(21.5rem,calc(100vw-1.25rem))]'
+          : 'w-[min(21.5rem,calc(100vw-11.25rem))] sm:w-[min(21.5rem,calc(100vw-14.5rem))]'
+      }`}
     >
       {/* Floating Search Pill */}
-      <div className="flex items-center gap-2 rounded-full border border-white/15 bg-[#0B0F17]/80 px-4 py-2.5 backdrop-blur-md shadow-2xl transition-colors focus-within:border-orange-400/50">
+      <div className="flex items-center gap-1.5 sm:gap-2 rounded-full border border-white/15 bg-[#0B0F17]/80 px-3 py-2 sm:px-4 sm:py-2.5 backdrop-blur-md shadow-2xl transition-colors focus-within:border-orange-400/50">
         <Search className="h-4 w-4 shrink-0 text-slate-400" aria-hidden="true" />
         <input
           id="searchInput"
@@ -176,7 +180,7 @@ export function SearchBar({ onSelectAndFly, liveRovers, customPins = [] }: Searc
             })}
           </div>
 
-          <div className="hud-scroll max-h-[320px] overflow-y-auto p-1.5">
+          <div className="hud-scroll max-h-[min(320px,calc(100dvh-10.5rem))] overflow-y-auto p-1.5">
             {matches.length === 0 ? (
               <div className="px-3 py-4 text-center text-xs text-slate-400">
                 No matching Martian target found in this category.

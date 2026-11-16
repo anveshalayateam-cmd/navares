@@ -35,6 +35,15 @@ import {
   normalizeSiteRectangle,
 } from '../utils/marsWaterModel';
 import { getGlobalMarsCloudCanvas } from '../utils/marsClouds';
+import { sampleRockMicroReliefAtLatLon } from '../utils/marsElevation';
+import {
+  MDEM_NATIVE_MAX_LEVEL,
+  MDEM_TERRAIN_MAX_HEIGHT,
+  MDEM_TERRAIN_MIN_HEIGHT,
+  fetchMdemTileWithBorders,
+  prefetchMdemBaseTiles,
+  sampleStitchedMdemUv,
+} from '../utils/marsMdemTerrain';
 import { createMarsProceduralImageryProvider } from '../utils/marsTiledProviders';
 import { CameraTelemetry, CursorTelemetry } from './CursorTelemetryPill';
 import { DroppedPinCandidate } from './DropPinOverlay';
@@ -152,7 +161,7 @@ const PRIMARY_GLOBAL_ROVER_IDS = new Set([
   'rosalind-franklin',
 ]);
 
-const MARS_TERRAIN_VERTICAL_EXAGGERATION = 2.2;
+const MARS_TERRAIN_VERTICAL_EXAGGERATION = 1.0;
 
 // Astronomical starfield: CesiumJS's built-in Tycho-2 star catalog cubemap (derived from the
 // Hipparcos / Tycho-2 catalogues, NASA/Goddard SVS). Faces are resolved against the same Cesium
@@ -161,7 +170,7 @@ const CESIUM_CDN_RELEASE_BASE =
   'https://cesium.com/downloads/cesiumjs/releases/1.124/Build/Cesium/';
 const TYCHO_STARFIELD_SKYBOX_BASE = `${CESIUM_CDN_RELEASE_BASE}Assets/Textures/SkyBox/tycho2t3_80_`;
 
-const MIN_CAMERA_HEIGHT_METERS = 1500;
+const MIN_CAMERA_HEIGHT_METERS = 18;
 // Closer global framing to match the default Mars overview shown in the app reference.
 const DEFAULT_CAMERA_HEIGHT_METERS = 20_000_000;
 const MAX_CAMERA_HEIGHT_METERS = 23_000_000;
@@ -190,7 +199,7 @@ const isMobileOrTouchDevice = (): boolean => {
   return coarsePointer || touchCapable;
 };
 
-const CTX_MAX_ALPHA = 0.45;
+const CTX_MAX_ALPHA = 0.34;
 const CTX_FADE_START_METERS = 900_000;
 const CTX_FULL_ALPHA_METERS = 40_000;
 
@@ -208,11 +217,31 @@ function getCtxFadeAlpha(cameraHeightMeters: number): number {
   return CTX_MAX_ALPHA * smooth;
 }
 
+const ROCK_DETAIL_MAX_ALPHA = 0.86;
+const ROCK_DETAIL_FADE_START_METERS = 26_000;
+const ROCK_DETAIL_FULL_ALPHA_METERS = 2_200;
+
+function getRockDetailFadeAlpha(clearanceMeters: number): number {
+  const progress = Math.max(
+    0,
+    Math.min(
+      1,
+      (ROCK_DETAIL_FADE_START_METERS - clearanceMeters) /
+        (ROCK_DETAIL_FADE_START_METERS - ROCK_DETAIL_FULL_ALPHA_METERS)
+    )
+  );
+  const smooth = progress * progress * (3 - 2 * progress);
+  return ROCK_DETAIL_MAX_ALPHA * smooth;
+}
+
 // Clouds: full at high altitude, progressive fade as the camera zooms in.
 const CLOUDS_MAX_ALPHA = 0.48;
 const CLOUDS_FADE_START_METERS = 3_500_000; // begin fading below ~3500 km
 const CLOUDS_FADE_END_METERS = 250_000; // fully gone near surface
 const CLOUD_SHELL_ALTITUDE_METERS = 58_000;
+const ATMOSPHERE_SHELL_ALTITUDE_METERS = 310_000;
+const ATMOSPHERE_FULL_VISIBLE_METERS = 100_000;
+const ATMOSPHERE_FADE_OUT_METERS = 200_000;
 
 function getCloudFadeAlpha(cameraHeightMeters: number): number {
   if (cameraHeightMeters >= CLOUDS_FADE_START_METERS) return CLOUDS_MAX_ALPHA;
@@ -224,37 +253,41 @@ function getCloudFadeAlpha(cameraHeightMeters: number): number {
   return CLOUDS_MAX_ALPHA * smooth;
 }
 
-// Optical color: far = classic bright mosaic; near = sandy / butterscotch of the loading image.
+// Optical color: above 500 km = sandy / butterscotch orbital view;
+// descending from 500 km to surface progressively deepens reddish iron-oxide surface tint.
 const COLOR_BLEND_FAR_METERS = 12_000_000;
 const COLOR_BLEND_NEAR_METERS = 400_000;
+const SURFACE_RED_TINT_START_METERS = 500_000;
+const SURFACE_RED_TINT_FULL_METERS = 1_500;
+const SURFACE_RED_TINT_MAX_ALPHA = 0.10;
 
 const OPTICAL_COLOR_FAR = {
-  hue: -0.04,
-  contrast: 1.15,
+  hue: 0.0,
+  contrast: 1.04,
   brightness: 1.0,
-  saturation: 1.35,
-  gamma: 0.88,
+  saturation: 1.02,
+  gamma: 0.98,
 };
 const OPTICAL_COLOR_NEAR = {
-  hue: 0.02,
-  contrast: 1.08,
-  brightness: 0.96,
-  saturation: 0.92,
-  gamma: 0.98,
+  hue: -0.02,
+  contrast: 1.16,
+  brightness: 1.0,
+  saturation: 1.18,
+  gamma: 0.86,
 };
 const CTX_COLOR_FAR = {
   hue: -0.04,
   contrast: 1.2,
-  brightness: 0.94,
+  brightness: 0.96,
   saturation: 1.35,
   gamma: 0.85,
 };
 const CTX_COLOR_NEAR = {
-  hue: 0.02,
-  contrast: 1.1,
-  brightness: 0.94,
-  saturation: 0.92,
-  gamma: 0.95,
+  hue: -0.04,
+  contrast: 1.28,
+  brightness: 0.98,
+  saturation: 1.2,
+  gamma: 0.92,
 };
 
 function getAltitudeColorBlend(cameraHeightMeters: number): number {
@@ -264,6 +297,15 @@ function getAltitudeColorBlend(cameraHeightMeters: number): number {
   const progress =
     (COLOR_BLEND_FAR_METERS - cameraHeightMeters) /
     (COLOR_BLEND_FAR_METERS - COLOR_BLEND_NEAR_METERS);
+  return progress * progress * (3 - 2 * progress);
+}
+
+function getSurfaceRedTintProgress(clearanceMeters: number): number {
+  if (clearanceMeters >= SURFACE_RED_TINT_START_METERS) return 0;
+  if (clearanceMeters <= SURFACE_RED_TINT_FULL_METERS) return 1;
+  const progress =
+    (SURFACE_RED_TINT_START_METERS - clearanceMeters) /
+    (SURFACE_RED_TINT_START_METERS - SURFACE_RED_TINT_FULL_METERS);
   return progress * progress * (3 - 2 * progress);
 }
 
@@ -286,13 +328,12 @@ function applyOpticalColorForAltitude(
     layer.gamma = 0.9;
     return;
   }
-  // Restore every Optical grading property after scientific modes, which darken this layer.
-  // Brightness is not altitude-graded: it must always return to the full default value.
-  layer.hue = lerp(0.0, -0.06, t);
-  layer.saturation = lerp(1.0, 1.45, t);
-  layer.contrast = lerp(1.0, 1.18, t);
+  // Smoothly intensify reddish iron-oxide warmth as the camera descends below 500 km.
+  layer.hue = lerp(OPTICAL_COLOR_FAR.hue, OPTICAL_COLOR_NEAR.hue, t);
+  layer.saturation = lerp(OPTICAL_COLOR_FAR.saturation, OPTICAL_COLOR_NEAR.saturation, t);
+  layer.contrast = lerp(OPTICAL_COLOR_FAR.contrast, OPTICAL_COLOR_NEAR.contrast, t);
   layer.brightness = 1.0;
-  layer.gamma = lerp(1.0, 0.82, t);
+  layer.gamma = lerp(OPTICAL_COLOR_FAR.gamma, OPTICAL_COLOR_NEAR.gamma, t);
 }
 
 function applyCtxColorForAltitude(
@@ -359,7 +400,6 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
   ref
 ) {
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const amberHazeOverlayRef = useRef<HTMLDivElement | null>(null);
   const viewerRef = useRef<CesiumViewer | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const marsEllipsoidRef = useRef<any>(null);
@@ -368,8 +408,12 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
 
   const vikingLayerRef = useRef<CesiumImageryLayer | null>(null);
   const ctxLayerRef = useRef<CesiumImageryLayer | null>(null);
+  const redTintLayerRef = useRef<CesiumImageryLayer | null>(null);
+  const rockDetailLayerRef = useRef<CesiumImageryLayer | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const cloudShellPrimitiveRef = useRef<any>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const horizonAtmospherePrimitiveRef = useRef<any>(null);
   const cloudModeBlendRef = useRef<number>(mapStyle === 'optical' ? 1 : 0);
   const reliefShadeLayerRef = useRef<CesiumImageryLayer | null>(null);
   const temperatureLayerRef = useRef<CesiumImageryLayer | null>(null);
@@ -717,7 +761,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     }
     const areaInfo = getLocationAreaInfo(target);
     const adaptiveAlt = areaInfo
-      ? Math.max(6000, Math.min(2_200_000, Math.round(areaInfo.radiusKm * 1800)))
+      ? Math.max(350, Math.min(2_200_000, Math.round(areaInfo.radiusKm * 1800)))
       : 15000;
     zoomToLocationInternal(target.latitude, target.longitude, adaptiveAlt);
   };
@@ -920,19 +964,29 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
         lastTs = now;
 
         const carto = marsEllipsoid.cartesianToCartographic(viewer.camera.positionWC);
-        const cameraHeight = carto ? Math.max(MIN_CAMERA_HEIGHT_METERS, carto.height) : 10000;
+        const Cesium = window.Cesium;
+        let terrainElev = 0;
+        if (carto && Cesium) {
+          terrainElev = getMarsElevation(
+            Cesium.Math.toDegrees(carto.latitude),
+            Cesium.Math.toDegrees(carto.longitude),
+            carto.height < 40_000 ? 14 : 4
+          );
+        }
+        const rawHeight = carto ? carto.height : 10000;
+        const clearanceM = Math.max(MIN_CAMERA_HEIGHT_METERS, rawHeight - terrainElev);
         const speedFactorPerSec = 0.85 * CAMERA_INPUT_SENSITIVITY_MULTIPLIER * ZOOM_SPEED_MULTIPLIER;
         const rawDelta = Math.max(
-          20 * ZOOM_SPEED_MULTIPLIER,
-          cameraHeight * speedFactorPerSec * dtSec
+          0.9 * ZOOM_SPEED_MULTIPLIER,
+          clearanceM * speedFactorPerSec * dtSec
         );
 
         if (direction > 0) {
-          const moveStep = Math.min(Math.max(0, cameraHeight - MIN_CAMERA_HEIGHT_METERS), rawDelta);
+          const moveStep = Math.min(Math.max(0, clearanceM - MIN_CAMERA_HEIGHT_METERS), rawDelta);
           if (moveStep > 0) viewer.camera.moveForward(moveStep);
         } else {
           const moveStep = Math.min(
-            Math.max(0, MAX_CAMERA_HEIGHT_METERS - cameraHeight),
+            Math.max(0, MAX_CAMERA_HEIGHT_METERS - Math.max(0, rawHeight)),
             rawDelta
           );
           if (moveStep > 0) viewer.camera.moveBackward(moveStep);
@@ -948,23 +1002,35 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
   const wheelZoomInternal = (deltaY: number) => {
     const viewer = viewerRef.current;
     const marsEllipsoid = marsEllipsoidRef.current;
-    if (!viewer || viewer.isDestroyed() || !marsEllipsoid || deltaY === 0) return;
+    const Cesium = window.Cesium;
+    if (!viewer || viewer.isDestroyed() || !marsEllipsoid || !Cesium || deltaY === 0) return;
 
     cancelCameraOrientationAnimation();
     viewer.trackedEntity = undefined;
     viewer.camera.cancelFlight();
 
     const carto = marsEllipsoid.cartesianToCartographic(viewer.camera.positionWC);
-    const cameraHeight = carto ? Math.max(MIN_CAMERA_HEIGHT_METERS, carto.height) : 10000;
+    const terrainElev = carto
+      ? getMarsElevation(
+          Cesium.Math.toDegrees(carto.latitude),
+          Cesium.Math.toDegrees(carto.longitude),
+          carto.height < 40_000 ? 14 : 4
+        )
+      : 0;
+    const rawHeight = carto ? carto.height : 10000;
+    const clearanceM = Math.max(MIN_CAMERA_HEIGHT_METERS, rawHeight - terrainElev);
     const step = Math.max(
-      15 * ZOOM_SPEED_MULTIPLIER,
-      cameraHeight * 0.06 * CAMERA_INPUT_SENSITIVITY_MULTIPLIER * ZOOM_SPEED_MULTIPLIER
+      0.75 * ZOOM_SPEED_MULTIPLIER,
+      clearanceM * 0.06 * CAMERA_INPUT_SENSITIVITY_MULTIPLIER * ZOOM_SPEED_MULTIPLIER
     );
     if (deltaY < 0) {
-      const moveStep = Math.min(Math.max(0, cameraHeight - MIN_CAMERA_HEIGHT_METERS), step);
+      const moveStep = Math.min(Math.max(0, clearanceM - MIN_CAMERA_HEIGHT_METERS), step);
       if (moveStep > 0) viewer.camera.moveForward(moveStep);
     } else {
-      const moveStep = Math.min(Math.max(0, MAX_CAMERA_HEIGHT_METERS - cameraHeight), step);
+      const moveStep = Math.min(
+        Math.max(0, MAX_CAMERA_HEIGHT_METERS - Math.max(0, rawHeight)),
+        step
+      );
       if (moveStep > 0) viewer.camera.moveBackward(moveStep);
     }
   };
@@ -1080,35 +1146,132 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
       ellipsoid: marsEllipsoid,
     });
     marsTilingSchemeRef.current = marsTilingScheme;
-    const terrainTileWidth = 65;
-    const terrainTileHeight = 65;
-    const marsTerrainProvider = new Cesium.CustomHeightmapTerrainProvider({
-      width: terrainTileWidth,
-      height: terrainTileHeight,
+
+    // Preload global MDEM200M base tiles (levels 0..1) so synchronous elevation queries align immediately
+    void prefetchMdemBaseTiles();
+
+    const mdemErrorEvent = new Cesium.Event();
+    const mdemCredit = new Cesium.Credit('NASA GSFC / DLR / USGS / Caltech Murray Lab MDEM200M');
+    const terrainNativeGridSize = 129; // seamless stitched grid for MDEM200M levels 0..7
+    const terrainCloseGridSize = 65; // subdivided grid for close-up inspection levels 8..16
+    const maxTerrainLod = 16;
+    const maxConcurrentTerrainRequests = 14;
+    let activeTerrainRequests = 0;
+
+    const levelZeroTerrainError =
+      Cesium.TerrainProvider.getEstimatedLevelZeroGeometricErrorForAHeightmap(
+        marsEllipsoid,
+        terrainNativeGridSize,
+        marsTilingScheme.getNumberOfXTilesAtLevel(0)
+      );
+
+    const marsTerrainProvider = {
       tilingScheme: marsTilingScheme,
-      callback: (x: number, y: number, level: number) => {
-        const rectangle = marsTilingScheme.tileXYToRectangle(x, y, level);
-        const heights = new Float32Array(terrainTileWidth * terrainTileHeight);
-        for (let row = 0; row < terrainTileHeight; row += 1) {
-          const latitude = Cesium.Math.toDegrees(
-            rectangle.north -
-              (row / (terrainTileHeight - 1)) * (rectangle.north - rectangle.south)
-          );
-          for (let column = 0; column < terrainTileWidth; column += 1) {
-            const longitude = Cesium.Math.toDegrees(
-              rectangle.west +
-                (column / (terrainTileWidth - 1)) * (rectangle.east - rectangle.west)
-            );
-            heights[row * terrainTileWidth + column] = getMarsElevation(
-              latitude,
-              longitude,
-              level
-            );
-          }
-        }
-        return heights;
+      ready: true,
+      readyPromise: Promise.resolve(true),
+      errorEvent: mdemErrorEvent,
+      credit: mdemCredit,
+      hasWaterMask: false,
+      hasVertexNormals: false,
+      availability: undefined,
+      getTileDataAvailable(_x: number, _y: number, level: number) {
+        return level <= maxTerrainLod;
       },
-    });
+      loadTileDataAvailability() {
+        return undefined;
+      },
+      getLevelMaximumGeometricError(level: number) {
+        return levelZeroTerrainError / (1 << level);
+      },
+      requestTileGeometry(x: number, y: number, level: number) {
+        if (level > maxTerrainLod) return undefined;
+        if (activeTerrainRequests >= maxConcurrentTerrainRequests) return undefined;
+        activeTerrainRequests += 1;
+
+        const gridSize =
+          level <= MDEM_NATIVE_MAX_LEVEL ? terrainNativeGridSize : terrainCloseGridSize;
+        const childTileMask = level < maxTerrainLod ? 15 : 0;
+
+        return (async () => {
+          try {
+            const heights = new Float32Array(gridSize * gridSize);
+            if (level <= MDEM_NATIVE_MAX_LEVEL) {
+              const tileSet = await fetchMdemTileWithBorders(level, x, y);
+              if (tileSet) {
+                for (let row = 0; row < gridSize; row += 1) {
+                  const v = row / (gridSize - 1);
+                  const rowOffset = row * gridSize;
+                  for (let col = 0; col < gridSize; col += 1) {
+                    const u = col / (gridSize - 1);
+                    heights[rowOffset + col] = sampleStitchedMdemUv(tileSet, u, v);
+                  }
+                }
+              } else {
+                const rectangle = marsTilingScheme.tileXYToRectangle(x, y, level);
+                for (let row = 0; row < gridSize; row += 1) {
+                  const latitude = Cesium.Math.toDegrees(
+                    rectangle.north - (row / (gridSize - 1)) * (rectangle.north - rectangle.south)
+                  );
+                  const rowOffset = row * gridSize;
+                  for (let col = 0; col < gridSize; col += 1) {
+                    const longitude = Cesium.Math.toDegrees(
+                      rectangle.west + (col / (gridSize - 1)) * (rectangle.east - rectangle.west)
+                    );
+                    heights[rowOffset + col] = getMarsElevation(latitude, longitude, level);
+                  }
+                }
+              }
+            } else {
+              const shift = level - MDEM_NATIVE_MAX_LEVEL;
+              const tileScale = 1 << shift;
+              const x7 = Math.floor(x / tileScale);
+              const y7 = Math.floor(y / tileScale);
+              const span = 1 / tileScale;
+              const uStart = (x - x7 * tileScale) * span;
+              const vStart = (y - y7 * tileScale) * span;
+              const tileSet = await fetchMdemTileWithBorders(MDEM_NATIVE_MAX_LEVEL, x7, y7);
+              const rectangle = marsTilingScheme.tileXYToRectangle(x, y, level);
+              for (let row = 0; row < gridSize; row += 1) {
+                const vFrac = row / (gridSize - 1);
+                const v7 = vStart + vFrac * span;
+                const latitude = Cesium.Math.toDegrees(
+                  rectangle.north - vFrac * (rectangle.north - rectangle.south)
+                );
+                const rowOffset = row * gridSize;
+                for (let col = 0; col < gridSize; col += 1) {
+                  const uFrac = col / (gridSize - 1);
+                  const u7 = uStart + uFrac * span;
+                  const longitude = Cesium.Math.toDegrees(
+                    rectangle.west + uFrac * (rectangle.east - rectangle.west)
+                  );
+                  const baseElev = tileSet
+                    ? sampleStitchedMdemUv(tileSet, u7, v7)
+                    : getMarsElevation(latitude, longitude, MDEM_NATIVE_MAX_LEVEL);
+                  heights[rowOffset + col] =
+                    level >= 13
+                      ? baseElev + sampleRockMicroReliefAtLatLon(latitude, longitude, level)
+                      : baseElev;
+                }
+              }
+            }
+
+            return new Cesium.HeightmapTerrainData({
+              buffer: heights,
+              width: gridSize,
+              height: gridSize,
+              childTileMask,
+              structure: {
+                elementMultiplier: 1,
+                lowestEncodedHeight: MDEM_TERRAIN_MIN_HEIGHT,
+                highestEncodedHeight: MDEM_TERRAIN_MAX_HEIGHT,
+              },
+            });
+          } finally {
+            activeTerrainRequests = Math.max(0, activeTerrainRequests - 1);
+          }
+        })();
+      },
+    };
 
     let viewer: CesiumViewer;
     try {
@@ -1142,8 +1305,9 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     const initialShadowEnabled =
       sunShadowEnabledRef.current && mapStyleRef.current === 'optical';
     viewer.scene.globe.enableLighting = initialShadowEnabled;
-    viewer.scene.sun = new Cesium.Sun();
-    viewer.scene.sun.show = true;
+    const marsSun = new Cesium.Sun();
+    marsSun.show = true;
+    viewer.scene.sun = marsSun;
     viewer.scene.globe.dynamicAtmosphereLighting = initialShadowEnabled;
     viewer.scene.globe.dynamicAtmosphereLightingFromSun = false;
 
@@ -1171,7 +1335,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
 
     const controller = viewer.scene.screenSpaceCameraController;
     controller.enableCollisionDetection = false;
-    controller.minimumZoomDistance = 2500;
+    controller.minimumZoomDistance = MIN_CAMERA_HEIGHT_METERS;
     controller.maximumZoomDistance = MAX_CAMERA_HEIGHT_METERS;
     controller.enableZoom = true;
     controller.enableRotate = true;
@@ -1200,17 +1364,23 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
       },
     ];
 
-    // Subtle dusty Martian amber/butterscotch haze that is fully visible by 100 km
-    // and fades out completely by 200 km, keeping orbital views crisp against the starfield.
+    // Equal R/G scattering coefficients avoid red-over-green optical extinction inversion,
+    // while hueShift (-0.088) and saturationShift (0.24) produce a deep warm amber-orange Martian sky at 2x scale.
+    const marsRayleighCoeff = new Cesium.Cartesian3(0.85e-5, 0.85e-5, 0.0);
+    const marsMieCoeff = new Cesium.Cartesian3(1.55e-5, 1.55e-5, 0.0);
+
     viewer.scene.backgroundColor = Cesium.Color.BLACK;
     viewer.scene.highDynamicRange = false;
     const marsSkyAtmosphere = new Cesium.SkyAtmosphere(marsEllipsoid);
     marsSkyAtmosphere.show = false;
-    marsSkyAtmosphere.hueShift = 0.0;
-    marsSkyAtmosphere.saturationShift = 0.0;
-    marsSkyAtmosphere.brightnessShift = -1.0;
-    marsSkyAtmosphere.atmosphereRayleighScaleHeight = 6800;
-    marsSkyAtmosphere.atmosphereMieScaleHeight = 3200;
+    marsSkyAtmosphere.hueShift = -0.088;
+    marsSkyAtmosphere.saturationShift = 0.24;
+    marsSkyAtmosphere.brightnessShift = 0.0;
+    marsSkyAtmosphere.atmosphereRayleighScaleHeight = 22_200;
+    marsSkyAtmosphere.atmosphereMieScaleHeight = 11_600;
+    marsSkyAtmosphere.atmosphereRayleighCoefficient = marsRayleighCoeff;
+    marsSkyAtmosphere.atmosphereMieCoefficient = marsMieCoeff;
+    marsSkyAtmosphere.atmosphereMieAnisotropy = 0.72;
     marsSkyAtmosphere.atmosphereLightIntensity = 0.0;
     marsSkyAtmosphere.perFragmentAtmosphere = true;
     viewer.scene.skyAtmosphere = marsSkyAtmosphere;
@@ -1235,18 +1405,21 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     if (viewer.scene.fog) {
       viewer.scene.fog.enabled = false;
       viewer.scene.fog.density = 0.0;
-      viewer.scene.fog.minimumBrightness = 0.02;
+      viewer.scene.fog.minimumBrightness = 0.28;
       viewer.scene.fog.screenSpaceErrorFactor = 2.0;
     }
     // Keep globe lighting active at every supported camera altitude; do not fade the night-side shadow with zoom.
     viewer.scene.globe.lightingFadeOutDistance = 1_000_000_000;
     viewer.scene.globe.lightingFadeInDistance = 1_000_000_000;
     viewer.scene.globe.atmosphereLightIntensity = 0.0;
-    viewer.scene.globe.atmosphereHueShift = 0.0;
-    viewer.scene.globe.atmosphereSaturationShift = 0.0;
-    viewer.scene.globe.atmosphereBrightnessShift = -1.0;
-    viewer.scene.globe.atmosphereRayleighScaleHeight = 6800;
-    viewer.scene.globe.atmosphereMieScaleHeight = 3200;
+    viewer.scene.globe.atmosphereHueShift = -0.088;
+    viewer.scene.globe.atmosphereSaturationShift = 0.24;
+    viewer.scene.globe.atmosphereBrightnessShift = 0.0;
+    viewer.scene.globe.atmosphereRayleighScaleHeight = 22_200;
+    viewer.scene.globe.atmosphereMieScaleHeight = 11_600;
+    viewer.scene.globe.atmosphereRayleighCoefficient = marsRayleighCoeff;
+    viewer.scene.globe.atmosphereMieCoefficient = marsMieCoeff;
+    viewer.scene.globe.atmosphereMieAnisotropy = 0.72;
     viewer.scene.globe.depthTestAgainstTerrain = true;
     (viewer.scene.globe as any).lambertDiffuseMultiplier = 0.85;
     (viewer.scene.globe as any).showWaterEffect = false;
@@ -1360,14 +1533,14 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     opticalLayer.gamma = OPTICAL_COLOR_FAR.gamma;
     vikingLayerRef.current = opticalLayer;
 
-    // 2. High-Res MRO CTX Overlay (up to zoom level 13 / 6 m/px, smooth progressive blend below 900 km)
+    // 2. Caltech Murray Lab Global CTX Mosaic V01 (5m/px at level 12, aligned with MDEM200M)
     const ctxProvider = new Cesium.UrlTemplateImageryProvider({
-      url: 'https://astro.arcgis.com/arcgis/rest/services/OnMars/CTX/MapServer/tile/{z}/{y}/{x}',
+      url: 'https://astro.arcgis.com/arcgis/rest/services/OnMars/CTX1/MapServer/tile/{z}/{y}/{x}',
       tilingScheme: marsTilingScheme,
       tileWidth: 512,
       tileHeight: 512,
       minimumLevel: 4,
-      maximumLevel: 13,
+      maximumLevel: 12,
     });
     const unbindCtxErr = ctxProvider.errorEvent.addEventListener((e: { retry?: boolean }) => {
       if (e) e.retry = false;
@@ -1383,7 +1556,143 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     ctxLayer.gamma = CTX_COLOR_FAR.gamma;
     ctxLayerRef.current = ctxLayer;
 
-    // 2b. Global Translucent Limb/Horizon Martian Cloud Shell (full at altitude, fades on zoom-in;
+    // 2a-tint. Progressive ferric-oxide red surface glaze below 500 km (tints grayscale CTX1 too)
+    const redTintCanvas = document.createElement('canvas');
+    redTintCanvas.width = 8;
+    redTintCanvas.height = 8;
+    const redTintCtx = redTintCanvas.getContext('2d');
+    if (redTintCtx) {
+      redTintCtx.fillStyle = '#b83416';
+      redTintCtx.fillRect(0, 0, 8, 8);
+    }
+    const redTintProvider = new Cesium.SingleTileImageryProvider({
+      url: redTintCanvas.toDataURL('image/png'),
+      tileWidth: 8,
+      tileHeight: 8,
+      ellipsoid: marsEllipsoid,
+    });
+    const redTintLayer = viewer.imageryLayers.addImageryProvider(redTintProvider);
+    redTintLayer.show = false;
+    redTintLayer.alpha = 0.0;
+    redTintLayerRef.current = redTintLayer;
+
+    // 2a. Site-Geology Micro-Rock & Regolith Imagery (rendered levels 11..18 below 26 km;
+    //     minimumLevel stays 0 so Cesium never enumerates millions of skeletons for ancestor tiles)
+    const rockDetailProvider = createMarsProceduralImageryProvider({
+      Cesium,
+      tilingScheme: marsTilingScheme,
+      mode: 'rock-detail',
+      minimumLevel: 0,
+      minRenderLevel: 11,
+      maximumLevel: 18,
+    });
+    const rockDetailLayer = viewer.imageryLayers.addImageryProvider(rockDetailProvider);
+    configureLayerFiltering(rockDetailLayer);
+    rockDetailLayer.show = false;
+    rockDetailLayer.alpha = 0.0;
+    rockDetailLayerRef.current = rockDetailLayer;
+
+    // 2b. 3D Horizon-Emerging Pure Amber-Yellow Martian Sky Dome Shell (2x scale & 2x intensity)
+    const horizonAtmosphereMaterial = new Cesium.Material({
+      fabric: {
+        type: 'MarsHorizonAtmosphereShell',
+        uniforms: {
+          u_localUpEC: new Cesium.Cartesian3(0.0, 0.0, 1.0),
+          u_horizonCos: 0.0,
+          u_camAltitudeKm: 20000.0,
+          u_opacity: 0.0,
+          u_shadowEnabled: initialShadowEnabled ? 1.0 : 0.0,
+        },
+        source: `
+          uniform vec3 u_localUpEC;
+          uniform float u_horizonCos;
+          uniform float u_camAltitudeKm;
+          uniform float u_opacity;
+          uniform float u_shadowEnabled;
+
+          czm_material czm_getMaterial(czm_materialInput materialInput)
+          {
+            czm_material material = czm_getDefaultMaterial(materialInput);
+            vec3 rayDirEC = normalize(-materialInput.positionToEyeEC);
+            vec3 upEC = normalize(u_localUpEC);
+
+            float cosZenith = clamp(dot(rayDirEC, upEC), -1.0, 1.0);
+            float rayAngle = asin(cosZenith);
+            float horizonAngle = asin(clamp(u_horizonCos, -1.0, 1.0));
+            float elevAboveHorizon = rayAngle - horizonAngle;
+
+            // Doubled atmospheric vertical span emerging from behind the 3D terrain horizon
+            float scaleAngle = mix(0.23, 0.088, clamp(u_camAltitudeKm / 180.0, 0.0, 1.0));
+            float belowFade = smoothstep(-0.28, 0.0, elevAboveHorizon);
+            float opticalDepth = exp(-max(elevAboveHorizon, 0.0) / scaleAngle) * belowFade;
+
+            // Directional Mie forward scattering & day-night terminator harmony
+            vec3 sunDirEC = normalize(vec3(0.66, 0.42, 0.623));
+            float sunAlign = clamp(dot(rayDirEC, sunDirEC), 0.0, 1.0);
+            float mieForward = pow(max(sunAlign, 1e-4), 3.0) * 0.65;
+            vec3 skySampleDir = normalize(upEC * 0.25 + rayDirEC);
+            float ndotl = dot(skySampleDir, sunDirEC);
+            float dayMask = mix(1.0, 0.14 + 0.86 * smoothstep(-0.28, 0.34, ndotl), u_shadowEnabled);
+
+            // Deep warm Martian amber-orange atmospheric palette (zero green or pale yellow)
+            vec3 horizonTone = vec3(1.00, 0.54, 0.04);
+            vec3 midSkyTone = vec3(0.92, 0.40, 0.02);
+            vec3 zenithTone = vec3(0.58, 0.22, 0.01);
+            vec3 skyColor = mix(zenithTone, midSkyTone, smoothstep(0.04, 0.48, opticalDepth));
+            skyColor = mix(skyColor, horizonTone, smoothstep(0.48, 0.96, opticalDepth));
+            skyColor += vec3(0.32, 0.14, 0.01) * mieForward * (0.35 + 0.65 * opticalDepth);
+            skyColor /= max(skyColor.r, 1.0);
+
+            // 2x stronger surface & limb intensity while preserving orbital horizon fade
+            float lowAltBoost = mix(1.0, 0.78, clamp(u_camAltitudeKm / 145.0, 0.0, 1.0));
+            float skyAlpha = clamp(pow(max(opticalDepth, 1e-4), 0.62) * lowAltBoost * 1.75, 0.0, 0.99);
+
+            material.diffuse = vec3(0.0);
+            material.emission = skyColor * (0.85 + 0.45 * opticalDepth) * dayMask;
+            material.alpha = clamp(skyAlpha * dayMask * u_opacity, 0.0, 0.99);
+            return material;
+          }
+        `,
+      },
+      translucent: true,
+    });
+    const horizonAtmospherePrimitive = new Cesium.Primitive({
+      geometryInstances: new Cesium.GeometryInstance({
+        geometry: new Cesium.EllipsoidGeometry({
+          radii: new Cesium.Cartesian3(
+            MARS_CONSTANTS.EQUATORIAL_RADIUS + ATMOSPHERE_SHELL_ALTITUDE_METERS,
+            MARS_CONSTANTS.EQUATORIAL_RADIUS + ATMOSPHERE_SHELL_ALTITUDE_METERS,
+            MARS_CONSTANTS.POLAR_RADIUS + ATMOSPHERE_SHELL_ALTITUDE_METERS
+          ),
+          vertexFormat: Cesium.MaterialAppearance.MaterialSupport.ALL.vertexFormat,
+          stackPartitions: 96,
+          slicePartitions: 128,
+        }),
+      }),
+      appearance: new Cesium.MaterialAppearance({
+        material: horizonAtmosphereMaterial,
+        materialSupport: Cesium.MaterialAppearance.MaterialSupport.ALL,
+        flat: true,
+        translucent: true,
+        closed: false,
+        renderState: {
+          cull: {
+            enabled: true,
+            face: Cesium.CullFace.FRONT,
+          },
+          depthTest: {
+            enabled: true,
+          },
+          depthMask: false,
+        },
+      }),
+      asynchronous: false,
+      show: false,
+    });
+    viewer.scene.primitives.add(horizonAtmospherePrimitive);
+    horizonAtmospherePrimitiveRef.current = horizonAtmospherePrimitive;
+
+    // 2c. Global Translucent Limb/Horizon Martian Cloud Shell (full at altitude, fades on zoom-in;
     //     invisible straight-on from the front, emerging along edges/horizons & fading into space)
     const initialCloudOpacity =
       getCloudFadeAlpha(DEFAULT_CAMERA_HEIGHT_METERS) * cloudModeBlendRef.current;
@@ -1952,12 +2261,23 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     // Adaptive marker & polyline vertical clearance so <1 km points hug the surface without floating
     const getCameraHeightMeters = () => {
       const carto = marsEllipsoid.cartesianToCartographic(viewer.camera.positionWC);
-      return carto ? Math.max(0, carto.height) : DEFAULT_CAMERA_HEIGHT_METERS;
+      if (!carto) return DEFAULT_CAMERA_HEIGHT_METERS;
+      if (carto.height > 150_000) return Math.max(0, carto.height);
+      const groundElev = getMarsElevation(
+        Cesium.Math.toDegrees(carto.latitude),
+        Cesium.Math.toDegrees(carto.longitude),
+        carto.height < 40_000 ? 12 : 4
+      );
+      return Math.max(0, carto.height - groundElev);
     };
     const getCameraDetailLevel = () => {
       const h = getCameraHeightMeters();
-      if (h < 15_000) return 11;
-      if (h < 80_000) return 8;
+      if (h < 180) return 18;
+      if (h < 700) return 17;
+      if (h < 2_500) return 16;
+      if (h < 9_000) return 14;
+      if (h < 35_000) return 11;
+      if (h < 120_000) return 8;
       if (h < 350_000) return 6;
       return 4;
     };
@@ -3156,8 +3476,26 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
 
     updateCameraDaylight();
 
-    // preUpdate runs right before UniformState updates frame lighting
+    const scratchLocalUpWC = new Cesium.Cartesian3();
+    const scratchLocalUpEC = new Cesium.Cartesian3();
+
+    // preUpdate runs right before UniformState updates frame lighting & terrain safety floor
     const removePreUpdate = viewer.scene.preUpdate.addEventListener(() => {
+      const camCarto = marsEllipsoid.cartesianToCartographic(viewer.camera.positionWC);
+      if (camCarto && camCarto.height < 40_000) {
+        const latDeg = Cesium.Math.toDegrees(camCarto.latitude);
+        const lonDeg = Cesium.Math.toDegrees(camCarto.longitude);
+        const minSurfaceHeight =
+          getMarsElevation(latDeg, lonDeg, camCarto.height < 8_000 ? 15 : 6) + 7.5;
+        if (camCarto.height < minSurfaceHeight) {
+          viewer.camera.position = Cesium.Cartesian3.fromRadians(
+            camCarto.longitude,
+            camCarto.latitude,
+            minSurfaceHeight,
+            marsEllipsoid
+          );
+        }
+      }
       updateCameraDaylight();
     });
 
@@ -3317,38 +3655,58 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
       }
 
       const camCarto = marsEllipsoid.cartesianToCartographic(viewer.camera.positionWC);
-      const camHeight = camCarto ? camCarto.height : DEFAULT_CAMERA_HEIGHT_METERS;
-      const atmosphereOverlay = amberHazeOverlayRef.current;
-      if (atmosphereOverlay) {
-        const altitudeProgress = Cesium.Math.clamp((15000 - camHeight) / 12500, 0.0, 1.0);
-        const altitudeFade = altitudeProgress * altitudeProgress * (3.0 - 2.0 * altitudeProgress);
-        Cesium.Cartesian3.normalize(viewer.camera.positionWC, scratchAtmosphereCameraNormal);
-        const daylightDot = Cesium.Cartesian3.dot(scratchAtmosphereCameraNormal, marsSunDirection);
-        const daylightFade = Cesium.Math.clamp((daylightDot + 0.04) / 0.16, 0.0, 1.0);
-        const overlayOpacity = altitudeFade * daylightFade;
-        if (Math.abs(Number(atmosphereOverlay.style.opacity) - overlayOpacity) > 0.002) {
-          atmosphereOverlay.style.opacity = overlayOpacity.toFixed(3);
-        }
+      const rawCamHeight = camCarto ? camCarto.height : DEFAULT_CAMERA_HEIGHT_METERS;
+      let camClearanceM = Math.max(0, rawCamHeight);
+      if (camCarto && rawCamHeight < 250_000) {
+        const groundElev = getMarsElevation(
+          Cesium.Math.toDegrees(camCarto.latitude),
+          Cesium.Math.toDegrees(camCarto.longitude),
+          rawCamHeight < 35_000 ? 14 : 4
+        );
+        camClearanceM = Math.max(0, rawCamHeight - groundElev);
       }
-      const ctxOpacity = getCtxFadeAlpha(camHeight);
-      // Restrict the warm iron-oxide grade to low-altitude optical views.
-      const t = Cesium.Math.clamp((10000 - camHeight) / 9000, 0.0, 1.0);
+
+      // Tighten heightmap subdivision when close to inspect rocks, preserve orbital FPS above 40 km
+      const baseSSE = mobileOrTouch
+        ? MOBILE_MAXIMUM_SCREEN_SPACE_ERROR
+        : DESKTOP_MAXIMUM_SCREEN_SPACE_ERROR;
+      const closeSse = mobileOrTouch ? 1.5 : 1.05;
+      const closeSseBlend = Cesium.Math.clamp((40_000 - camClearanceM) / 32_000, 0.0, 1.0);
+      const targetSSE = lerp(baseSSE, closeSse, closeSseBlend);
+      if (Math.abs((viewer.scene.globe.maximumScreenSpaceError ?? baseSSE) - targetSSE) > 0.02) {
+        viewer.scene.globe.maximumScreenSpaceError = targetSSE;
+      }
+
+      const ctxOpacity = getCtxFadeAlpha(camClearanceM);
+      const rockOpacity = getRockDetailFadeAlpha(camClearanceM);
+      // Progressively warm and deepen the surface ferric-oxide red tint as we descend from 500 km.
+      const surfaceRedT = getSurfaceRedTintProgress(camClearanceM);
+      const redTintOpacity = SURFACE_RED_TINT_MAX_ALPHA * surfaceRedT;
       if (mapStyleRef.current === 'optical' || mapStyleRef.current === 'radiation') {
         applyOpticalColorForAltitude(
           vikingLayerRef.current,
-          t,
+          surfaceRedT,
           mapStyleRef.current === 'optical'
         );
-        applyCtxColorForAltitude(ctxLayerRef.current, camHeight);
+        applyCtxColorForAltitude(ctxLayerRef.current, camClearanceM);
       }
       if (ctxLayerRef.current) {
         ctxLayerRef.current.alpha = ctxOpacity;
         ctxLayerRef.current.show = mapStyleRef.current === 'optical' && ctxOpacity > 0.003;
       }
+      if (redTintLayerRef.current) {
+        redTintLayerRef.current.alpha = mapStyleRef.current === 'optical' ? redTintOpacity : 0.0;
+        redTintLayerRef.current.show =
+          mapStyleRef.current === 'optical' && redTintOpacity > 0.003;
+      }
+      if (rockDetailLayerRef.current) {
+        rockDetailLayerRef.current.alpha = rockOpacity;
+        rockDetailLayerRef.current.show = mapStyleRef.current === 'optical' && rockOpacity > 0.003;
+      }
 
       const cloudShell = cloudShellPrimitiveRef.current;
       if (cloudShell) {
-        const cloudOpacity = getCloudFadeAlpha(camHeight) * cloudModeBlendRef.current;
+        const cloudOpacity = getCloudFadeAlpha(camClearanceM) * cloudModeBlendRef.current;
         const showClouds = cloudOpacity > 0.003;
         cloudShell.show = showClouds;
         if (showClouds) {
@@ -3361,16 +3719,49 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
         }
       }
 
-      // Butterscotch-amber sky and ground atmosphere fade in from 150 km
-      // and reach full strength by 20 km, independently of the low-altitude surface color grade.
-      const atmosphereProgress = Cesium.Math.clamp((150000 - camHeight) / 130000, 0.0, 1.0);
+      // True 3D horizon-emerging Martian atmosphere (2x richer scattering, 100% by 100 km -> 0% at 200 km)
+      const atmosphereProgress = Cesium.Math.clamp(
+        (ATMOSPHERE_FADE_OUT_METERS - camClearanceM) /
+          (ATMOSPHERE_FADE_OUT_METERS - ATMOSPHERE_FULL_VISIBLE_METERS),
+        0.0,
+        1.0
+      );
       const atmT = atmosphereProgress * atmosphereProgress * (3.0 - 2.0 * atmosphereProgress);
       const atmVisible = atmT > 0.002;
-      const targetHueShift = Cesium.Math.lerp(0.0, -0.55, atmT);
-      const targetSaturationShift = Cesium.Math.lerp(0.0, 0.05, atmT);
-      const targetBrightnessShift = Cesium.Math.lerp(-1.0, -0.45, atmT);
-      const targetSkyLightIntensity = 100.0 * atmT;
-      const targetGlobeLightIntensity = 50.0 * atmT;
+
+      const horizonShell = horizonAtmospherePrimitiveRef.current;
+      if (horizonShell) {
+        const modeScale = mapStyleRef.current === 'optical' ? 1.0 : 0.4;
+        const shellOpacity = atmT * modeScale;
+        const showShell = shellOpacity > 0.002;
+        horizonShell.show = showShell;
+        if (showShell) {
+          const uniforms = horizonShell.appearance?.material?.uniforms;
+          if (uniforms) {
+            marsEllipsoid.geodeticSurfaceNormal(viewer.camera.positionWC, scratchLocalUpWC);
+            Cesium.Matrix4.multiplyByPointAsVector(
+              viewer.camera.viewMatrix,
+              scratchLocalUpWC,
+              scratchLocalUpEC
+            );
+            Cesium.Cartesian3.normalize(scratchLocalUpEC, uniforms.u_localUpEC);
+            const rLocal = MARS_CONSTANTS.EQUATORIAL_RADIUS;
+            const rCam = rLocal + Math.max(0, camClearanceM);
+            const ratio = rLocal / rCam;
+            uniforms.u_horizonCos = -Math.sqrt(Math.max(0, 1 - ratio * ratio));
+            uniforms.u_camAltitudeKm = camClearanceM / 1000;
+            uniforms.u_opacity = shellOpacity;
+            uniforms.u_shadowEnabled =
+              sunShadowEnabledRef.current && mapStyleRef.current === 'optical' ? 1.0 : 0.0;
+          }
+        }
+      }
+
+      const targetHueShift = -0.088;
+      const targetSaturationShift = 0.24;
+      const targetBrightnessShift = 0.0;
+      const targetSkyLightIntensity = 48.0 * atmT;
+      const targetGlobeLightIntensity = 24.0 * atmT;
       const skyAtmosphere = viewer.scene.skyAtmosphere;
       if (skyAtmosphere) {
         if (skyAtmosphere.show !== atmVisible) {
@@ -3394,7 +3785,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
       if (
         Math.abs((viewer.scene.globe.atmosphereHueShift ?? 0.0) - targetHueShift) > 0.001 ||
         Math.abs((viewer.scene.globe.atmosphereSaturationShift ?? 0.0) - targetSaturationShift) > 0.001 ||
-        Math.abs((viewer.scene.globe.atmosphereBrightnessShift ?? -1.0) - targetBrightnessShift) > 0.001 ||
+        Math.abs((viewer.scene.globe.atmosphereBrightnessShift ?? 0.0) - targetBrightnessShift) > 0.001 ||
         Math.abs(viewer.scene.globe.atmosphereLightIntensity - targetGlobeLightIntensity) > 0.05
       ) {
         viewer.scene.globe.atmosphereHueShift = targetHueShift;
@@ -3403,7 +3794,9 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
         viewer.scene.globe.atmosphereLightIntensity = targetGlobeLightIntensity;
       }
       if (viewer.scene.fog) {
-        const targetFogDensity = 0.0000032 * t;
+        const nearFogProgress = Cesium.Math.clamp((160_000 - camClearanceM) / 155_000, 0.0, 1.0);
+        const fogCurve = nearFogProgress * nearFogProgress * (3.0 - 2.0 * nearFogProgress);
+        const targetFogDensity = 0.000032 * fogCurve * atmT;
         if (
           viewer.scene.fog.enabled !== atmVisible ||
           Math.abs((viewer.scene.fog.density ?? 0) - targetFogDensity) > 0.0000001
@@ -3618,6 +4011,10 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
         viewer.scene.primitives.remove(cloudShellPrimitiveRef.current);
       }
       cloudShellPrimitiveRef.current = null;
+      if (horizonAtmospherePrimitiveRef.current && !viewer.isDestroyed()) {
+        viewer.scene.primitives.remove(horizonAtmospherePrimitiveRef.current);
+      }
+      horizonAtmospherePrimitiveRef.current = null;
       if (!viewer.isDestroyed()) {
         viewer.destroy();
       }
@@ -3633,17 +4030,35 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     if (!isReady) return;
     const opticalLayer = vikingLayerRef.current;
     const ctxLayer = ctxLayerRef.current;
+    const redTintLayer = redTintLayerRef.current;
+    const rockDetailLayer = rockDetailLayerRef.current;
     const reliefShadeLayer = reliefShadeLayerRef.current;
     const temperatureLayer = temperatureLayerRef.current;
     const radiationLayer = radiationLayerRef.current;
     const elevationLayer = elevationLayerRef.current;
+
+    const viewer = viewerRef.current;
+    const marsEllipsoid = marsEllipsoidRef.current;
+    let camHeight = DEFAULT_CAMERA_HEIGHT_METERS;
+    if (viewer && !viewer.isDestroyed() && marsEllipsoid) {
+      const carto = marsEllipsoid.cartesianToCartographic(viewer.camera.position);
+      if (carto) {
+        const groundElev = getMarsElevation(
+          (carto.latitude * 180) / Math.PI,
+          (carto.longitude * 180) / Math.PI,
+          carto.height < 35_000 ? 14 : 4
+        );
+        camHeight = Math.max(0, carto.height - groundElev);
+      }
+    }
 
     const layers: Array<{ layer: CesiumImageryLayer | null; targetAlpha: number }> = [];
     if (opticalLayer) {
       const isOpticalBase = mapStyle === 'optical' || mapStyle === 'radiation';
       // Non-optical modes get fixed grading; optical altitude blend runs in the render loop
       if (mapStyle === 'optical') {
-        applyOpticalColorForAltitude(opticalLayer, DEFAULT_CAMERA_HEIGHT_METERS, true);
+        const surfaceRedT = getSurfaceRedTintProgress(camHeight);
+        applyOpticalColorForAltitude(opticalLayer, surfaceRedT, true);
       } else {
         opticalLayer.hue = 0.0;
         opticalLayer.contrast = 1.25;
@@ -3653,16 +4068,22 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
       }
       layers.push({ layer: opticalLayer, targetAlpha: isOpticalBase ? 1.0 : 0.0 });
     }
-    if (ctxLayer) {
-      const viewer = viewerRef.current;
-      const marsEllipsoid = marsEllipsoidRef.current;
-      let camHeight = DEFAULT_CAMERA_HEIGHT_METERS;
-      if (viewer && !viewer.isDestroyed() && marsEllipsoid) {
-        const carto = marsEllipsoid.cartesianToCartographic(viewer.camera.position);
-        if (carto) camHeight = carto.height;
+    if (ctxLayer || redTintLayer || rockDetailLayer) {
+      if (ctxLayer) {
+        const ctxOpacity = getCtxFadeAlpha(camHeight);
+        layers.push({ layer: ctxLayer, targetAlpha: mapStyle === 'optical' ? ctxOpacity : 0.0 });
       }
-      const ctxOpacity = getCtxFadeAlpha(camHeight);
-      layers.push({ layer: ctxLayer, targetAlpha: mapStyle === 'optical' ? ctxOpacity : 0.0 });
+      if (redTintLayer) {
+        const redOpacity = SURFACE_RED_TINT_MAX_ALPHA * getSurfaceRedTintProgress(camHeight);
+        layers.push({ layer: redTintLayer, targetAlpha: mapStyle === 'optical' ? redOpacity : 0.0 });
+      }
+      if (rockDetailLayer) {
+        const rockOpacity = getRockDetailFadeAlpha(camHeight);
+        layers.push({
+          layer: rockDetailLayer,
+          targetAlpha: mapStyle === 'optical' ? rockOpacity : 0.0,
+        });
+      }
     }
 
     if (reliefShadeLayer) {
@@ -3954,7 +4375,8 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
       areaInfo.ringLonLat.flatMap(([lon, lat]) => [lon, lat]),
       marsEllipsoid
     );
-    const regionColor = Cesium.Color.fromCssColorString('#22D3EE');
+    const regionOutlineColor = Cesium.Color.fromCssColorString('#FBBF24');
+    const regionFillColor = Cesium.Color.fromCssColorString('#D97706');
 
     if (areaInfo.isPolarCap && areaInfo.polarCenterLatDeg !== undefined) {
       const radiusMeters = areaInfo.radiusKm * 1000;
@@ -3966,14 +4388,14 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
           semiMajorAxis: radiusMeters,
           semiMinorAxis: radiusMeters,
           heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
-          material: regionColor.withAlpha(0.22),
+          material: regionFillColor.withAlpha(0.025),
           outline: false,
         },
         polyline: {
           positions,
           clampToGround: true,
-          width: 2.5,
-          material: regionColor.withAlpha(0.92),
+          width: 1.75,
+          material: regionOutlineColor.withAlpha(0.75),
         },
       });
       return;
@@ -3986,14 +4408,14 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
         hierarchy: new Cesium.PolygonHierarchy(positions),
         heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
         perPositionHeight: false,
-        material: regionColor.withAlpha(0.22),
+        material: regionFillColor.withAlpha(0.025),
         outline: false,
       },
       polyline: {
         positions,
         clampToGround: true,
-        width: 2.5,
-        material: regionColor.withAlpha(0.92),
+        width: 1.75,
+        material: regionOutlineColor.withAlpha(0.75),
       },
     });
   }, [selectedTargetId, isReady]);
@@ -4034,17 +4456,6 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
         }}
         className="w-full h-full"
         aria-label="Interactive 3D Mars Globe"
-      />
-      <div
-        ref={amberHazeOverlayRef}
-        aria-hidden="true"
-        className="absolute inset-0 z-[5] pointer-events-none"
-        style={{
-          opacity: 0,
-          mixBlendMode: 'screen',
-          background:
-            'linear-gradient(to bottom, rgba(217, 138, 43, 0) 35%, rgba(224, 145, 48, 0.32) 55%, rgba(195, 110, 32, 0.22) 75%, rgba(0, 0, 0, 0) 100%)',
-        }}
       />
 
       {!isReady && !webglError && (

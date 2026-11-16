@@ -1,4 +1,5 @@
-import { Radio, Route, ShieldAlert, X } from 'lucide-react';
+import { ChevronDown, ChevronUp, Radio, Route, ShieldAlert, X } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { formatDistance, formatLatLon, formatSurfaceElevation } from '../utils/marsMath';
 import { RouteEndpoint, SurvivalRouteResult } from '../utils/marsPathfinder';
 
@@ -17,6 +18,17 @@ export function SurvivalRouteOverlay({
   onClearRoute,
   onExitRouteMode,
 }: SurvivalRouteOverlayProps) {
+  const [collapsed, setCollapsed] = useState(false);
+
+  useEffect(() => {
+    setCollapsed(false);
+  }, [
+    routeResult?.start.latDeg,
+    routeResult?.start.lonDeg,
+    routeResult?.destination.latDeg,
+    routeResult?.destination.lonDeg,
+  ]);
+
   if (!routeMode && !routeResult) return null;
 
   const formatKm = (km: number) =>
@@ -32,25 +44,27 @@ export function SurvivalRouteOverlay({
   const elevDecimals = routeResult && routeResult.directDistanceKm < 2 ? 1 : 0;
 
   return (
-    <>
+    <div className="pointer-events-none fixed top-[60px] sm:top-[68px] left-2.5 right-2.5 sm:right-auto sm:left-4 z-20 flex sm:w-[min(22.5rem,calc(100vw-2rem))] max-h-[calc(100dvh-13.5rem)] md:max-h-[calc(100dvh-9.5rem)] flex-col gap-2">
       {/* Instruction Banner while Route Mode is active */}
       {routeMode && (
         <div
           role="status"
-          className="pointer-events-auto fixed top-[68px] left-4 z-20 flex flex-wrap items-center gap-2.5 rounded-full border border-emerald-400/35 bg-[#0B0F17]/88 px-3.5 py-2 backdrop-blur-md shadow-2xl max-w-[calc(100vw-2rem)]"
+          className="pointer-events-auto flex shrink-0 flex-wrap items-center justify-between gap-2 rounded-2xl border border-emerald-400/35 bg-[#0B0F17]/90 px-3 py-1.5 sm:px-3.5 sm:py-2 backdrop-blur-md shadow-2xl"
         >
-          <Route className="h-3.5 w-3.5 shrink-0 text-emerald-300" aria-hidden="true" />
-          <span className="text-xs text-slate-100">
-            {routeResult
-              ? 'Optimal Survival Route locked · Click globe or pin for new Start'
-              : startPoint
-                ? 'Click Destination on Mars (or pick a pin) to compute survival path'
-                : 'Click Start Point anywhere on Mars (or click a pin)'}
-          </span>
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <Route className="h-3.5 w-3.5 shrink-0 text-emerald-300" aria-hidden="true" />
+            <span className="text-[11px] sm:text-xs text-slate-100 leading-snug">
+              {routeResult
+                ? 'Optimal Survival Route locked · Click globe or pin for new Start'
+                : startPoint
+                  ? 'Click Destination on Mars (or pick a pin) to compute survival path'
+                  : 'Click Start Point anywhere on Mars (or click a pin)'}
+            </span>
+          </div>
           <button
             type="button"
             onClick={onExitRouteMode}
-            className="inline-flex items-center gap-1 rounded-full border border-white/15 bg-white/10 px-2.5 py-0.5 text-[11px] font-medium text-slate-200 transition-colors hover:bg-white/20 hover:text-white cursor-pointer whitespace-nowrap"
+            className="inline-flex shrink-0 items-center gap-1 rounded-full border border-white/15 bg-white/10 px-2.5 py-0.5 text-[11px] font-medium text-slate-200 transition-colors hover:bg-white/20 hover:text-white cursor-pointer whitespace-nowrap"
           >
             <X className="h-3 w-3" aria-hidden="true" />
             <span>Exit</span>
@@ -62,14 +76,16 @@ export function SurvivalRouteOverlay({
       {routeResult && (
         <aside
           aria-label="Optimal Survival Route Telemetry"
-          className={`pointer-events-auto fixed left-4 z-20 flex w-[360px] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-2xl border border-emerald-400/30 bg-[#0B0F17]/88 backdrop-blur-md shadow-2xl ${
-            routeMode
-              ? 'top-[116px] max-h-[calc(100vh-14.5rem)]'
-              : 'top-[68px] max-h-[calc(100vh-12rem)]'
+          className={`pointer-events-auto flex flex-col overflow-hidden rounded-2xl border border-emerald-400/30 bg-[#0B0F17]/90 backdrop-blur-md shadow-2xl ${
+            collapsed ? 'shrink-0' : 'min-h-0 flex-1'
           }`}
         >
           {/* Card Header */}
-          <div className="flex items-center justify-between gap-2 border-b border-white/10 px-4 py-3">
+          <div
+            className={`flex shrink-0 items-center justify-between gap-2 px-3.5 py-2.5 sm:px-4 sm:py-3 ${
+              collapsed ? '' : 'border-b border-white/10'
+            }`}
+          >
             <div className="flex items-center gap-2 min-w-0">
               <Route className="h-4 w-4 shrink-0 text-emerald-400" aria-hidden="true" />
               <div className="min-w-0">
@@ -77,30 +93,56 @@ export function SurvivalRouteOverlay({
                   Optimal Survival Route
                 </h3>
                 <p className="truncate text-[11px] text-slate-400">
-                  {routeResult.start.label ??
-                    formatLatLon(routeResult.start.latDeg, routeResult.start.lonDeg, coordDecimals)}{' '}
-                  ➔{' '}
-                  {routeResult.destination.label ??
-                    formatLatLon(
-                      routeResult.destination.latDeg,
-                      routeResult.destination.lonDeg,
-                      coordDecimals
-                    )}
+                  {collapsed ? (
+                    <span className="font-mono-tabular text-emerald-300">
+                      {formatKm(routeResult.optimalDistanceKm)} ·{' '}
+                      {routeResult.avgRadiationMsVDay.toFixed(radDecimals)} mSv/day
+                    </span>
+                  ) : (
+                    <>
+                      {routeResult.start.label ??
+                        formatLatLon(routeResult.start.latDeg, routeResult.start.lonDeg, coordDecimals)}{' '}
+                      ➔{' '}
+                      {routeResult.destination.label ??
+                        formatLatLon(
+                          routeResult.destination.latDeg,
+                          routeResult.destination.lonDeg,
+                          coordDecimals
+                        )}
+                    </>
+                  )}
                 </p>
               </div>
             </div>
 
-            <button
-              type="button"
-              onClick={onClearRoute}
-              className="shrink-0 rounded-full border border-white/15 bg-white/[0.06] px-2.5 py-1 text-[11px] font-medium text-slate-200 transition-colors hover:bg-white/15 hover:text-white cursor-pointer whitespace-nowrap"
-            >
-              Clear Route
-            </button>
+            <div className="flex shrink-0 items-center gap-1">
+              <button
+                type="button"
+                onClick={() => setCollapsed((prev) => !prev)}
+                aria-expanded={!collapsed}
+                aria-label={collapsed ? 'Expand survival route telemetry' : 'Collapse survival route telemetry'}
+                title={collapsed ? 'Expand route telemetry' : 'Collapse route telemetry'}
+                className="flex h-7 w-7 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-white/10 hover:text-white cursor-pointer"
+              >
+                {collapsed ? (
+                  <ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />
+                ) : (
+                  <ChevronUp className="h-3.5 w-3.5" aria-hidden="true" />
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={onClearRoute}
+                className="shrink-0 rounded-full border border-white/15 bg-white/[0.06] px-2.5 py-1 text-[11px] font-medium text-slate-200 transition-colors hover:bg-white/15 hover:text-white cursor-pointer whitespace-nowrap"
+              >
+                Clear Route
+              </button>
+            </div>
           </div>
 
-          {/* Scrollable Telemetry Body */}
-          <div className="hud-scroll flex-1 overflow-y-auto px-4 py-3 space-y-3 text-xs">
+          {!collapsed && (
+            /* Scrollable Telemetry Body */
+            <div className="hud-scroll min-h-0 flex-1 overflow-y-auto px-3.5 py-3 sm:px-4 space-y-3 text-xs">
             {/* Key Path Telemetry */}
             <dl className="space-y-2 border-b border-white/10 pb-3">
               <div className="flex items-baseline justify-between gap-2">
@@ -243,8 +285,9 @@ export function SurvivalRouteOverlay({
               </span>
             </div>
           </div>
+          )}
         </aside>
       )}
-    </>
+    </div>
   );
 }

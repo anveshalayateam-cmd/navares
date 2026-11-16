@@ -1,4 +1,4 @@
-import { CloudSun, Crosshair, Radio, Satellite, Trash2, X } from 'lucide-react';
+import { ChevronDown, ChevronUp, CloudSun, Crosshair, Radio, Satellite, Trash2, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { CATEGORY_COLORS, CATEGORY_LABELS, MarsTarget, TelemetryMode } from '../data/marsData';
 import { LiveOrbiterElements } from '../services/marsOrbiterSync';
@@ -41,6 +41,7 @@ export function TargetInfoCard({
   onDeleteCustomPin,
   onClose,
 }: TargetInfoCardProps) {
+  const [collapsed, setCollapsed] = useState(false);
   const [imgSrc, setImgSrc] = useState<string>(
     () => target.photoUrl || createTargetPhotoFallback(target)
   );
@@ -48,6 +49,10 @@ export function TargetInfoCard({
   useEffect(() => {
     setImgSrc(target.photoUrl || createTargetPhotoFallback(target));
   }, [target]);
+
+  useEffect(() => {
+    setCollapsed(false);
+  }, [target.id]);
 
   const categoryColor = CATEGORY_COLORS[target.category];
   const displayLat =
@@ -89,10 +94,14 @@ export function TargetInfoCard({
   return (
     <aside
       aria-label={`${target.name} knowledge card`}
-      className="pointer-events-auto fixed top-4 right-4 z-30 flex w-[355px] max-w-[calc(100vw-2rem)] max-h-[calc(100vh-8rem)] flex-col rounded-2xl border border-white/14 bg-[#0B0F17]/84 backdrop-blur-md shadow-2xl overflow-hidden"
+      className="pointer-events-auto fixed top-[60px] left-2.5 right-2.5 sm:top-4 sm:left-auto sm:right-4 z-30 flex sm:w-[min(22.25rem,calc(100vw-2rem))] max-h-[calc(100dvh-13.5rem)] md:max-h-[calc(100dvh-8.5rem)] flex-col rounded-2xl border border-white/14 bg-[#0B0F17]/88 backdrop-blur-md shadow-2xl overflow-hidden"
     >
       {/* Header */}
-      <div className="flex items-start justify-between gap-3 border-b border-white/10 p-4">
+      <div
+        className={`flex shrink-0 items-start justify-between gap-2 sm:gap-3 p-3 sm:p-4 ${
+          collapsed ? '' : 'border-b border-white/10'
+        }`}
+      >
         <div className="min-w-0">
           <div className="flex items-center gap-2 text-xs font-medium text-slate-300">
             <span
@@ -111,28 +120,49 @@ export function TargetInfoCard({
           <h2 className="mt-1 font-display text-lg font-bold tracking-tight text-white">
             {target.name}
           </h2>
-          <p className="text-xs text-slate-400">{target.region}</p>
-          {locationArea && (
+          <p className="text-xs text-slate-400">
+            {target.region}
+            {collapsed ? ` · ${coordinatesText}` : ''}
+          </p>
+          {!collapsed && locationArea && (
             <p className="mt-1 text-[10px] leading-snug text-cyan-200/85">
               Area highlighted on globe · {formatLocationAreaKm2(locationArea.areaKm2)}
             </p>
           )}
         </div>
 
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Close knowledge card"
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-white/10 hover:text-white cursor-pointer"
-        >
-          <X className="h-4 w-4" aria-hidden="true" />
-        </button>
+        <div className="flex shrink-0 items-center gap-1">
+          <button
+            type="button"
+            onClick={() => setCollapsed((prev) => !prev)}
+            aria-expanded={!collapsed}
+            aria-label={collapsed ? `Expand ${target.name} knowledge card` : `Collapse ${target.name} knowledge card`}
+            title={collapsed ? 'Expand details' : 'Collapse details'}
+            className="flex h-8 w-8 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-white/10 hover:text-white cursor-pointer"
+          >
+            {collapsed ? (
+              <ChevronDown className="h-4 w-4" aria-hidden="true" />
+            ) : (
+              <ChevronUp className="h-4 w-4" aria-hidden="true" />
+            )}
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close knowledge card"
+            className="flex h-8 w-8 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-white/10 hover:text-white cursor-pointer"
+          >
+            <X className="h-4 w-4" aria-hidden="true" />
+          </button>
+        </div>
       </div>
 
-      {/* Body */}
-      <div className="hud-scroll flex-1 overflow-y-auto p-4 space-y-3.5">
+      {!collapsed && (
+        <>
+          {/* Body */}
+          <div className="hud-scroll min-h-0 flex-1 overflow-y-auto p-3 sm:p-4 space-y-3 sm:space-y-3.5">
         {/* Official NASA Mission / Terrain Photo with Canvas Fallback */}
-        <div className="relative h-32 w-full overflow-hidden rounded-xl border border-white/10 bg-black/50">
+        <div className="relative h-24 sm:h-32 w-full overflow-hidden rounded-xl border border-white/10 bg-black/50">
           <img
             src={imgSrc}
             alt={target.photoCaption}
@@ -321,29 +351,31 @@ export function TargetInfoCard({
         </div>
       </div>
 
-      {/* Prominent Zoom to Surface / Inspect Spacecraft Action */}
-      <div className="border-t border-white/10 p-3.5 bg-black/25 flex items-center gap-2">
-        <button
-          type="button"
-          onClick={() => onZoomToSurface(target)}
-          className="flex flex-1 items-center justify-center gap-2 rounded-full bg-orange-500 px-4 py-2.5 text-xs font-semibold text-slate-950 transition-colors duration-150 hover:bg-orange-400 cursor-pointer whitespace-nowrap"
-        >
-          <Crosshair className="h-3.5 w-3.5" aria-hidden="true" />
-          <span>{target.category === 'satellite' ? 'Inspect Spacecraft' : 'Zoom to Surface'}</span>
-        </button>
-        {target.isCustomPin && onDeleteCustomPin && (
-          <button
-            type="button"
-            onClick={() => onDeleteCustomPin(target.id)}
-            aria-label="Remove temporary session pin"
-            title="Remove session pin"
-            className="flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-full border border-rose-400/35 bg-rose-500/12 px-3 text-xs font-medium text-rose-200 transition-colors hover:bg-rose-500/25 hover:text-white cursor-pointer whitespace-nowrap"
-          >
-            <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
-            <span>Remove</span>
-          </button>
-        )}
-      </div>
+          {/* Prominent Zoom to Surface / Inspect Spacecraft Action */}
+          <div className="shrink-0 border-t border-white/10 p-2.5 sm:p-3.5 bg-black/25 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => onZoomToSurface(target)}
+              className="flex flex-1 items-center justify-center gap-2 rounded-full bg-orange-500 px-4 py-2.5 text-xs font-semibold text-slate-950 transition-colors duration-150 hover:bg-orange-400 cursor-pointer whitespace-nowrap"
+            >
+              <Crosshair className="h-3.5 w-3.5" aria-hidden="true" />
+              <span>{target.category === 'satellite' ? 'Inspect Spacecraft' : 'Zoom to Surface'}</span>
+            </button>
+            {target.isCustomPin && onDeleteCustomPin && (
+              <button
+                type="button"
+                onClick={() => onDeleteCustomPin(target.id)}
+                aria-label="Remove temporary session pin"
+                title="Remove session pin"
+                className="flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-full border border-rose-400/35 bg-rose-500/12 px-3 text-xs font-medium text-rose-200 transition-colors hover:bg-rose-500/25 hover:text-white cursor-pointer whitespace-nowrap"
+              >
+                <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                <span>Remove</span>
+              </button>
+            )}
+          </div>
+        </>
+      )}
     </aside>
   );
 }

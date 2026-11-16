@@ -52,15 +52,19 @@ export function MarsClockWidget() {
     <div
       aria-label={`Earth UTC ${formatEarthUtc(now)}; Mars Coordinated Time ${marsClock.time}, sol ${marsClock.sol}`}
       title="Earth UTC and Mars Coordinated Time (NASA Mars24 convention)"
-      className="mr-2 flex min-w-[146px] flex-col gap-0.5 rounded-xl border border-white/15 bg-[#0B0F17]/82 px-2.5 py-1.5 text-[10px] leading-tight text-slate-200 shadow-2xl backdrop-blur-md sm:min-w-[160px]"
+      className="mr-1.5 flex min-w-[116px] flex-col gap-0.5 rounded-xl border border-white/15 bg-[#0B0F17]/82 px-2 py-1 text-[9px] leading-tight text-slate-200 shadow-2xl backdrop-blur-md sm:mr-2 sm:min-w-[160px] sm:px-2.5 sm:py-1.5 sm:text-[10px]"
     >
-      <div className="flex items-center justify-between gap-2">
-        <span className="font-semibold tracking-wide text-slate-400">EARTH · UTC</span>
-        <time className="font-mono-tabular text-[11px] tabular-nums text-white">{formatEarthUtc(now)}</time>
+      <div className="flex items-center justify-between gap-1.5 sm:gap-2">
+        <span className="font-semibold tracking-wide text-slate-400">
+          <span className="hidden sm:inline">EARTH · </span>UTC
+        </span>
+        <time className="font-mono-tabular text-[10px] tabular-nums text-white sm:text-[11px]">{formatEarthUtc(now)}</time>
       </div>
-      <div className="flex items-center justify-between gap-2">
-        <span className="font-semibold tracking-wide text-orange-300/80">MARS · MTC</span>
-        <time className="font-mono-tabular text-[11px] tabular-nums text-orange-200">{marsClock.time}</time>
+      <div className="flex items-center justify-between gap-1.5 sm:gap-2">
+        <span className="font-semibold tracking-wide text-orange-300/80">
+          <span className="hidden sm:inline">MARS · </span>MTC
+        </span>
+        <time className="font-mono-tabular text-[10px] tabular-nums text-orange-200 sm:text-[11px]">{marsClock.time}</time>
       </div>
       <span className="sr-only">Mars Sol Date {marsClock.sol}</span>
     </div>

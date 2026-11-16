@@ -16,7 +16,7 @@ export function LeftMarginControls({
   return (
     <div
       aria-label="Spacecraft and rover visibility controls"
-      className="pointer-events-auto fixed bottom-14 left-4 z-20 flex flex-col items-start gap-2"
+      className="pointer-events-auto fixed bottom-[7.25rem] left-2.5 md:bottom-14 md:left-4 z-20 flex flex-col items-start gap-1.5 sm:gap-2"
     >
       <button
         type="button"
@@ -24,7 +24,7 @@ export function LeftMarginControls({
         aria-label={showSatellites ? 'Hide Satellite' : 'Show Satellite'}
         onClick={onToggleSatellites}
         title={showSatellites ? 'Hide satellites and orbital tracks' : 'Show satellites and orbital tracks'}
-        className={`group flex h-10 items-center justify-center rounded-2xl border px-3 text-xs font-medium backdrop-blur-md shadow-2xl transition-all duration-200 cursor-pointer whitespace-nowrap hover:px-3.5 focus-visible:px-3.5 ${
+        className={`group flex h-9 md:h-10 items-center justify-center rounded-2xl border px-2.5 md:px-3 text-xs font-medium backdrop-blur-md shadow-2xl transition-all duration-200 cursor-pointer whitespace-nowrap hover:px-3.5 focus-visible:px-3.5 ${
           showSatellites
             ? 'border-cyan-400/60 bg-cyan-500/20 text-cyan-100 hover:bg-cyan-500/30'
             : 'border-white/15 bg-[#0B0F17]/82 text-slate-200 hover:bg-white/10 hover:text-white'
@@ -45,7 +45,7 @@ export function LeftMarginControls({
         aria-label={showRovers ? 'Hide Rover' : 'Show Rover'}
         onClick={onToggleRovers}
         title={showRovers ? 'Hide rovers and landers' : 'Show rovers and landers'}
-        className={`group flex h-10 items-center justify-center rounded-2xl border px-3 text-xs font-medium backdrop-blur-md shadow-2xl transition-all duration-200 cursor-pointer whitespace-nowrap hover:px-3.5 focus-visible:px-3.5 ${
+        className={`group flex h-9 md:h-10 items-center justify-center rounded-2xl border px-2.5 md:px-3 text-xs font-medium backdrop-blur-md shadow-2xl transition-all duration-200 cursor-pointer whitespace-nowrap hover:px-3.5 focus-visible:px-3.5 ${
           showRovers
             ? 'border-orange-400/60 bg-orange-500/20 text-orange-100 hover:bg-orange-500/30'
             : 'border-white/15 bg-[#0B0F17]/82 text-slate-200 hover:bg-white/10 hover:text-white'
