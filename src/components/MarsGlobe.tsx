@@ -35,7 +35,6 @@ import {
   normalizeSiteRectangle,
 } from '../utils/marsWaterModel';
 import { getGlobalMarsCloudCanvas } from '../utils/marsClouds';
-import { sampleRockMicroReliefAtLatLon } from '../utils/marsElevation';
 import {
   MDEM_NATIVE_MAX_LEVEL,
   MDEM_TERRAIN_MAX_HEIGHT,
@@ -1152,18 +1151,19 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
 
     const mdemErrorEvent = new Cesium.Event();
     const mdemCredit = new Cesium.Credit('NASA GSFC / DLR / USGS / Caltech Murray Lab MDEM200M');
-    const terrainNativeGridSize = 129; // seamless stitched grid for MDEM200M levels 0..7
-    const terrainCloseGridSize = 65; // subdivided grid for close-up inspection levels 8..16
+    const terrainNativeGridSize = 513; // Preserve every sample in native 513×513 MDEM tiles.
     const maxTerrainLod = 16;
     const maxConcurrentTerrainRequests = 14;
     let activeTerrainRequests = 0;
-
-    const levelZeroTerrainError =
-      Cesium.TerrainProvider.getEstimatedLevelZeroGeometricErrorForAHeightmap(
-        marsEllipsoid,
-        terrainNativeGridSize,
-        marsTilingScheme.getNumberOfXTilesAtLevel(0)
-      );
+    const getTerrainGridSize = (level: number) => {
+      const intervals =
+        level <= MDEM_NATIVE_MAX_LEVEL
+          ? Math.min(terrainNativeGridSize - 1, 128 * (1 << level))
+          : Math.ceil(
+              (terrainNativeGridSize - 1) / (1 << (level - MDEM_NATIVE_MAX_LEVEL))
+            );
+      return Math.max(2, intervals + 1);
+    };
 
     const marsTerrainProvider = {
       tilingScheme: marsTilingScheme,
@@ -1181,15 +1181,18 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
         return undefined;
       },
       getLevelMaximumGeometricError(level: number) {
-        return levelZeroTerrainError / (1 << level);
+        return Cesium.TerrainProvider.getEstimatedLevelZeroGeometricErrorForAHeightmap(
+          marsEllipsoid,
+          getTerrainGridSize(level),
+          marsTilingScheme.getNumberOfXTilesAtLevel(level)
+        );
       },
       requestTileGeometry(x: number, y: number, level: number) {
         if (level > maxTerrainLod) return undefined;
         if (activeTerrainRequests >= maxConcurrentTerrainRequests) return undefined;
         activeTerrainRequests += 1;
 
-        const gridSize =
-          level <= MDEM_NATIVE_MAX_LEVEL ? terrainNativeGridSize : terrainCloseGridSize;
+        const gridSize = getTerrainGridSize(level);
         const childTileMask = level < maxTerrainLod ? 15 : 0;
 
         return (async () => {
@@ -1247,10 +1250,9 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
                   const baseElev = tileSet
                     ? sampleStitchedMdemUv(tileSet, u7, v7)
                     : getMarsElevation(latitude, longitude, MDEM_NATIVE_MAX_LEVEL);
-                  heights[rowOffset + col] =
-                    level >= 13
-                      ? baseElev + sampleRockMicroReliefAtLatLon(latitude, longitude, level)
-                      : baseElev;
+                  // Higher LOD subdivides/interpolates the measured 200 m DEM only;
+                  // never invent sub-pixel terrain heights that diverge from the source.
+                  heights[rowOffset + col] = baseElev;
                 }
               }
             }

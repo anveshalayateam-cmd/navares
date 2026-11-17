@@ -958,21 +958,13 @@ export function sampleRockMicroReliefAtLatLon(
 
 /**
  * Returns the Mars surface elevation at latitude/longitude in meters.
- * Prefers the live decoded NASA/ESA/Caltech MDEM200M 200m Global Blended DEM cache,
- * adding site-specific 3D boulder/outcrop micro-relief only at close rock zoom (level >= 13),
- * and seamlessly falling back to the MOLA landmark-calibrated model while tiles stream in.
+ * Prefers the live decoded NASA/ESA/Caltech MDEM200M 200m Global Blended DEM cache and
+ * falls back to the MOLA landmark-calibrated model while tiles stream in. Procedural
+ * rock detail remains a visual overlay and is never added to measured elevation values.
  */
-export function getMarsElevation(latDeg: number, lonDeg: number, terrainLevel = 0): number {
+export function getMarsElevation(latDeg: number, lonDeg: number, _terrainLevel = 0): number {
   const mdemElevation = sampleCachedMdemElevationMeters(latDeg, lonDeg);
-  if (mdemElevation !== null) {
-    return terrainLevel >= 13
-      ? mdemElevation + sampleRockMicroReliefAtLatLon(latDeg, lonDeg, terrainLevel)
-      : mdemElevation;
-  }
-
-  const baseElevation = sampleMarsElevationMeters(lonDeg, latDeg);
-  if (terrainLevel < 13) return baseElevation;
-  return baseElevation + sampleRockMicroReliefAtLatLon(latDeg, lonDeg, terrainLevel);
+  return mdemElevation ?? sampleMarsElevationMeters(lonDeg, latDeg);
 }
 
 /**
