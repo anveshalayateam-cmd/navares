@@ -1,11 +1,11 @@
 import { decode } from 'fast-png';
 
-const WIDTH = 3840;
-const HEIGHT = 1920;
+const WIDTH = 5760;
+const HEIGHT = 2880;
 const HEIGHT_MIN_METERS = -8206.0;
 const HEIGHT_RANGE_METERS = 29435.0;
 const MAX_UINT16 = 65535.0;
-const HEIGHTMAP_URL = '/mars_mola_3840x1920_u16.png';
+const HEIGHTMAP_URL = '/mars_mola_5760x2880_u16.png';
 
 let heightValues: Uint16Array | null = null;
 let heightmapLoadPromise: Promise<void> | null = null;
