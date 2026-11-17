@@ -40,16 +40,15 @@ const DATA_ATTRIBUTIONS = [
     ),
   },
   {
-    title: '3D Mars Topography (HRSC + MOLA Blended DEM) & Magnetic Field',
+    title: '3D Mars Topography (MOLA MEGDR) & Magnetic Field',
     description: (
       <>
-        3D terrain elevations stream directly from the NASA GSFC MOLA + ESA DLR MEX HRSC Global
-        Blended Digital Elevation Model v2 (
-        <span className="font-mono-tabular text-slate-200">MDEM200M</span>,{' '}
-        <span className="font-mono-tabular text-slate-200">200m/px</span>) aligned with the Murray
-        Lab CTX V01 globe at 1:1 true scale, paired with site-geology boulder/regolith micro-relief
-        at close surface zoom &amp; MGS magnetic anomaly maps —{' '}
-        <em className="text-slate-300">NASA GSFC / DLR / ESA / USGS Astrogeology / Esri</em>.
+        3D terrain elevations use the bundled single-channel 16-bit MOLA MEGDR raster (
+        <span className="font-mono-tabular text-slate-200">3840×1920</span>) derived from the
+        Mars Global Surveyor Mars Orbiter Laser Altimeter, decoded directly from the lossless PNG
+        heightfield and paired with site-geology boulder/regolith micro-relief at close surface
+        zoom. Magnetic anomaly overlays use NASA MGS data —{' '}
+        <em className="text-slate-300">NASA GSFC MOLA / USGS Astrogeology Science Center</em>.
       </>
     ),
   },
