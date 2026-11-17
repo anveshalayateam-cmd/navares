@@ -1,67 +1,81 @@
-const WIDTH = 1440;
-const HEIGHT = 720;
-const BYTES_PER_SAMPLE = 2;
-const EXPECTED_BYTES = WIDTH * HEIGHT * BYTES_PER_SAMPLE;
-const MEGDR_URL = '/megt90n000cb.img';
+import { decode } from 'fast-png';
 
-let rasterView: DataView | null = null;
-let rasterLoadPromise: Promise<void> | null = null;
+const WIDTH = 3840;
+const HEIGHT = 1920;
+const HEIGHT_MIN_METERS = -8206.0;
+const HEIGHT_RANGE_METERS = 29435.0;
+const MAX_UINT16 = 65535.0;
+const HEIGHTMAP_URL = '/mars_mola_3840x1920_u16.png';
 
-/** Load the bundled NASA PDS 4-pixel/degree MOLA topography raster exactly once. */
+let heightValues: Uint16Array | null = null;
+let heightmapLoadPromise: Promise<void> | null = null;
+
+/** Fetch and decode the bundled lossless 16-bit MOLA heightmap exactly once. */
 export function loadMolaMegdrRaster(): Promise<void> {
-  if (!rasterLoadPromise) {
-    rasterLoadPromise = (async () => {
-      const response = await fetch(MEGDR_URL);
+  if (!heightmapLoadPromise) {
+    heightmapLoadPromise = (async () => {
+      const response = await fetch(HEIGHTMAP_URL);
       if (!response.ok) {
-        throw new Error(`MOLA MEGDR request failed (${response.status} ${response.statusText}).`);
+        throw new Error(`MOLA heightmap request failed (${response.status} ${response.statusText}).`);
       }
-      const buffer = await response.arrayBuffer();
-      if (buffer.byteLength !== EXPECTED_BYTES) {
+
+      const encodedPng = new Uint8Array(await response.arrayBuffer());
+      const image = decode(encodedPng);
+      if (
+        image.width !== WIDTH ||
+        image.height !== HEIGHT ||
+        image.depth !== 16 ||
+        image.channels !== 1 ||
+        !(image.data instanceof Uint16Array) ||
+        image.data.length !== WIDTH * HEIGHT
+      ) {
         throw new Error(
-          `MOLA MEGDR has ${buffer.byteLength} bytes; expected ${EXPECTED_BYTES} for ${WIDTH}×${HEIGHT} Int16 samples.`
+          `Expected a ${WIDTH}×${HEIGHT}, single-channel 16-bit PNG; received ${image.width}×${image.height}, ${image.channels}-channel, ${image.depth}-bit data.`
         );
       }
-      rasterView = new DataView(buffer);
+
+      heightValues = image.data;
     })();
   }
-  return rasterLoadPromise;
+  return heightmapLoadPromise;
 }
 
 function wrapColumn(col: number): number {
   return ((col % WIDTH) + WIDTH) % WIDTH;
 }
 
-function sampleGrid(row: number, col: number): number {
+function samplePixel(row: number, col: number): number {
   const clampedRow = Math.max(0, Math.min(HEIGHT - 1, row));
   const wrappedCol = wrapColumn(col);
-  return rasterView!.getInt16((clampedRow * WIDTH + wrappedCol) * BYTES_PER_SAMPLE, false);
+  const gray16 = heightValues![clampedRow * WIDTH + wrappedCol];
+  return HEIGHT_MIN_METERS + (gray16 / MAX_UINT16) * HEIGHT_RANGE_METERS;
 }
 
 /**
- * Sample areocentric MOLA topography in meters. Bilinear interpolation keeps the raster
- * seam-free at 0°/360°E and removes visible height steps between adjacent grid posts.
- * Until the startup fetch completes, an optional source-compatible fallback can be used.
+ * Return bilinearly interpolated MOLA elevation in meters. Longitude wraps across the
+ * dateline; latitude is clamped to the source raster's +90°N..-90°S extent. An optional
+ * fallback is used only during the one-time image fetch/decode at application startup.
  */
 export function sampleElevationAt(
   lonDeg: number,
   latDeg: number,
   fallback?: () => number
 ): number {
-  if (!rasterView) return fallback ? fallback() : 0;
+  if (!heightValues) return fallback ? fallback() : 0;
 
-  const lon360 = ((lonDeg % 360) + 360) % 360;
+  const lon360 = ((lonDeg + 180) % 360 + 360) % 360;
   const u = (lon360 / 360) * WIDTH;
-  const v = ((90 - Math.max(-90, Math.min(90, latDeg))) / 180) * (HEIGHT - 1);
-  const rowPosition = v;
+  const clampedLatitude = Math.max(-90, Math.min(90, latDeg));
+  const v = ((90 - clampedLatitude) / 180) * (HEIGHT - 1);
   const col0 = Math.floor(u);
-  const row0 = Math.floor(rowPosition);
+  const row0 = Math.floor(v);
   const tx = u - col0;
-  const ty = rowPosition - row0;
+  const ty = v - row0;
 
-  const northWest = sampleGrid(row0, col0);
-  const northEast = sampleGrid(row0, col0 + 1);
-  const southWest = sampleGrid(row0 + 1, col0);
-  const southEast = sampleGrid(row0 + 1, col0 + 1);
+  const northWest = samplePixel(row0, col0);
+  const northEast = samplePixel(row0, col0 + 1);
+  const southWest = samplePixel(row0 + 1, col0);
+  const southEast = samplePixel(row0 + 1, col0 + 1);
   const north = northWest + (northEast - northWest) * tx;
   const south = southWest + (southEast - southWest) * tx;
   return north + (south - north) * ty;
