@@ -1158,7 +1158,11 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     const getTerrainGridSize = (level: number) => {
       const intervals =
         level <= MDEM_NATIVE_MAX_LEVEL
-          ? Math.min(terrainNativeGridSize - 1, 128 * (1 << level))
+          ? level <= 1
+            ? 128 * (1 << level)
+            : level === MDEM_NATIVE_MAX_LEVEL
+              ? terrainNativeGridSize - 1
+              : (terrainNativeGridSize - 1) / 2
           : Math.ceil(
               (terrainNativeGridSize - 1) / (1 << (level - MDEM_NATIVE_MAX_LEVEL))
             );
