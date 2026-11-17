@@ -14,14 +14,21 @@ const DATA_ATTRIBUTIONS = [
     description: (
       <>
         NASA Mars Trek / Viking Orbiter MDIM 2.1 Colorized Global Mosaic (
-        <span className="font-mono-tabular text-slate-200">232m/px</span>) &amp; Caltech Bruce
-        Murray Lab Global MRO CTX Mosaic V01 (
-        <span className="font-mono-tabular text-slate-200">5m/px</span>,{' '}
-        <span className="font-mono-tabular text-slate-200">murray-lab.caltech.edu/CTX/</span>) —{' '}
-        <em className="text-slate-300">
-          NASA / JPL / MSSS / Caltech Murray Lab / USGS Astrogeology / Esri
-        </em>
-        .
+        <span className="font-mono-tabular text-slate-200">232m/px</span>) —{' '}
+        <em className="text-slate-300">NASA / JPL / USGS Astrogeology / Esri</em>.
+      </>
+    ),
+  },
+  {
+    title: 'High-Resolution Orbital Detail',
+    description: (
+      <>
+        High-Resolution Orbital Detail: Bruce Murray Laboratory for Planetary Visualization
+        (Caltech) / NASA MRO CTX Global Mosaic (
+        <span className="font-mono-tabular text-slate-200">~5 m/px</span>, opt-in Extra Details
+        overlay across Optical, Elevation, Temperature, and Radiation modes;{' '}
+        <span className="font-mono-tabular text-slate-200">murray-lab.caltech.edu/CTX/</span>
+        ) — <em className="text-slate-300">NASA / JPL / MSSS / Caltech Murray Lab</em>.
       </>
     ),
   },
