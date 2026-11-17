@@ -11,25 +11,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
-      - name: Restore InfoMenu from last known good commit
-        run: |
-          git checkout 7c2bd225aae76e06457e8a720404c2a55861d667 -- src/components/InfoMenu.tsx
-          grep -q "export function InfoMenu" src/components/InfoMenu.tsx
-
-      - name: Apply Extra Details patches
-        run: python3 scripts/apply_extra_details.py
+      - name: Restore full InfoMenu + CTX attribution
+        run: python3 scripts/restore_infomenu_full.py
 
       - name: Commit and push
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/App.tsx src/components/MarsGlobe.tsx src/components/InfoMenu.tsx
+          git add src/components/InfoMenu.tsx
           if git diff --staged --quiet; then
             echo "No changes"
           else
-            git commit -m "feat: Extra Details (Murray Lab CTX); restore InfoMenu export"
+            git commit -m "fix: restore full InfoMenu.tsx with High-Resolution Orbital Detail attribution"
             git push
           fi
