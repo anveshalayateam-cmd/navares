@@ -7,7 +7,7 @@
  *    down to sub-meter detail (levels 13..19) paired with matching directional rock shading.
  */
 
-import { sampleCachedMdemElevationMeters } from './marsMdemTerrain';
+import { sampleElevationAt } from './molaMegdr';
 
 const DEG_TO_RAD = Math.PI / 180;
 const MARS_MEAN_RADIUS_M = 3_396_190;
@@ -709,7 +709,9 @@ function evalLandmarkCalibration(lonDeg: number, latDeg: number): number {
 })();
 
 export function sampleMarsElevationMeters(lonDeg: number, latDeg: number): number {
-  return sampleRawMacroElevationMeters(lonDeg, latDeg) + evalLandmarkCalibration(lonDeg, latDeg);
+  return sampleElevationAt(lonDeg, latDeg, () =>
+    sampleRawMacroElevationMeters(lonDeg, latDeg) + evalLandmarkCalibration(lonDeg, latDeg)
+  );
 }
 
 /**
@@ -957,14 +959,14 @@ export function sampleRockMicroReliefAtLatLon(
 }
 
 /**
- * Returns the Mars surface elevation at latitude/longitude in meters.
- * Prefers the live decoded NASA/ESA/Caltech MDEM200M 200m Global Blended DEM cache and
- * falls back to the MOLA landmark-calibrated model while tiles stream in. Procedural
- * rock detail remains a visual overlay and is never added to measured elevation values.
+ * Returns Mars surface elevation in meters from the NASA PDS 4-pixel/degree MOLA MEGDR.
+ * During its one-time startup fetch only, falls back to the calibrated local model.
+ * Procedural rock detail remains a visual overlay and is never added to elevations.
  */
 export function getMarsElevation(latDeg: number, lonDeg: number, _terrainLevel = 0): number {
-  const mdemElevation = sampleCachedMdemElevationMeters(latDeg, lonDeg);
-  return mdemElevation ?? sampleMarsElevationMeters(lonDeg, latDeg);
+  return sampleElevationAt(lonDeg, latDeg, () =>
+    sampleRawMacroElevationMeters(lonDeg, latDeg) + evalLandmarkCalibration(lonDeg, latDeg)
+  );
 }
 
 /**

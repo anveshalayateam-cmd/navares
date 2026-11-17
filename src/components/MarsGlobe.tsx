@@ -36,13 +36,9 @@ import {
 } from '../utils/marsWaterModel';
 import { getGlobalMarsCloudCanvas } from '../utils/marsClouds';
 import {
-  MDEM_NATIVE_MAX_LEVEL,
-  MDEM_TERRAIN_MAX_HEIGHT,
-  MDEM_TERRAIN_MIN_HEIGHT,
-  fetchMdemTileWithBorders,
-  prefetchMdemBaseTiles,
-  sampleStitchedMdemUv,
-} from '../utils/marsMdemTerrain';
+  loadMolaMegdrRaster,
+  sampleElevationAt,
+} from '../utils/molaMegdr';
 import { createMarsProceduralImageryProvider } from '../utils/marsTiledProviders';
 import { CameraTelemetry, CursorTelemetry } from './CursorTelemetryPill';
 import { DroppedPinCandidate } from './DropPinOverlay';
@@ -1146,40 +1142,33 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     });
     marsTilingSchemeRef.current = marsTilingScheme;
 
-    // Preload global MDEM200M base tiles (levels 0..1) so synchronous elevation queries align immediately
-    void prefetchMdemBaseTiles();
+    const molaRasterPromise = loadMolaMegdrRaster();
+    void molaRasterPromise.catch((error: unknown) => {
+      setWebglError(
+        error instanceof Error
+          ? `NASA MOLA elevation data failed to load: ${error.message}`
+          : 'NASA MOLA elevation data failed to load.'
+      );
+    });
 
-    const mdemErrorEvent = new Cesium.Event();
-    const mdemCredit = new Cesium.Credit('NASA GSFC / DLR / USGS / Caltech Murray Lab MDEM200M');
-    const terrainNativeGridSize = 513; // Preserve every sample in native 513×513 MDEM tiles.
-    const maxTerrainLod = 16;
-    const maxConcurrentTerrainRequests = 14;
-    let activeTerrainRequests = 0;
-    const getTerrainGridSize = (level: number) => {
-      const intervals =
-        level <= MDEM_NATIVE_MAX_LEVEL
-          ? level <= 1
-            ? 128 * (1 << level)
-            : level === MDEM_NATIVE_MAX_LEVEL
-              ? terrainNativeGridSize - 1
-              : (terrainNativeGridSize - 1) / 2
-          : Math.ceil(
-              (terrainNativeGridSize - 1) / (1 << (level - MDEM_NATIVE_MAX_LEVEL))
-            );
-      return Math.max(2, intervals + 1);
-    };
+    const MOLA_TILE_SIZE = 65;
+    const MOLA_MAX_LEVEL = 8;
+    const MOLA_SKIRT_HEIGHT_METERS = 1500;
+    const molaErrorEvent = new Cesium.Event();
+    const molaCredit = new Cesium.Credit('NASA PDS · Mars Global Surveyor MOLA MEGDR');
 
     const marsTerrainProvider = {
       tilingScheme: marsTilingScheme,
       ready: true,
       readyPromise: Promise.resolve(true),
-      errorEvent: mdemErrorEvent,
-      credit: mdemCredit,
+      errorEvent: molaErrorEvent,
+      credit: molaCredit,
       hasWaterMask: false,
       hasVertexNormals: false,
       availability: undefined,
+      skirtHeight: MOLA_SKIRT_HEIGHT_METERS,
       getTileDataAvailable(_x: number, _y: number, level: number) {
-        return level <= maxTerrainLod;
+        return level <= MOLA_MAX_LEVEL;
       },
       loadTileDataAvailability() {
         return undefined;
@@ -1187,94 +1176,46 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
       getLevelMaximumGeometricError(level: number) {
         return Cesium.TerrainProvider.getEstimatedLevelZeroGeometricErrorForAHeightmap(
           marsEllipsoid,
-          getTerrainGridSize(level),
+          MOLA_TILE_SIZE,
           marsTilingScheme.getNumberOfXTilesAtLevel(level)
         );
       },
       requestTileGeometry(x: number, y: number, level: number) {
-        if (level > maxTerrainLod) return undefined;
-        if (activeTerrainRequests >= maxConcurrentTerrainRequests) return undefined;
-        activeTerrainRequests += 1;
-
-        const gridSize = getTerrainGridSize(level);
-        const childTileMask = level < maxTerrainLod ? 15 : 0;
-
+        if (level > MOLA_MAX_LEVEL) return undefined;
         return (async () => {
-          try {
-            const heights = new Float32Array(gridSize * gridSize);
-            if (level <= MDEM_NATIVE_MAX_LEVEL) {
-              const tileSet = await fetchMdemTileWithBorders(level, x, y);
-              if (tileSet) {
-                for (let row = 0; row < gridSize; row += 1) {
-                  const v = row / (gridSize - 1);
-                  const rowOffset = row * gridSize;
-                  for (let col = 0; col < gridSize; col += 1) {
-                    const u = col / (gridSize - 1);
-                    heights[rowOffset + col] = sampleStitchedMdemUv(tileSet, u, v);
-                  }
-                }
-              } else {
-                const rectangle = marsTilingScheme.tileXYToRectangle(x, y, level);
-                for (let row = 0; row < gridSize; row += 1) {
-                  const latitude = Cesium.Math.toDegrees(
-                    rectangle.north - (row / (gridSize - 1)) * (rectangle.north - rectangle.south)
-                  );
-                  const rowOffset = row * gridSize;
-                  for (let col = 0; col < gridSize; col += 1) {
-                    const longitude = Cesium.Math.toDegrees(
-                      rectangle.west + (col / (gridSize - 1)) * (rectangle.east - rectangle.west)
-                    );
-                    heights[rowOffset + col] = getMarsElevation(latitude, longitude, level);
-                  }
-                }
-              }
-            } else {
-              const shift = level - MDEM_NATIVE_MAX_LEVEL;
-              const tileScale = 1 << shift;
-              const x7 = Math.floor(x / tileScale);
-              const y7 = Math.floor(y / tileScale);
-              const span = 1 / tileScale;
-              const uStart = (x - x7 * tileScale) * span;
-              const vStart = (y - y7 * tileScale) * span;
-              const tileSet = await fetchMdemTileWithBorders(MDEM_NATIVE_MAX_LEVEL, x7, y7);
-              const rectangle = marsTilingScheme.tileXYToRectangle(x, y, level);
-              for (let row = 0; row < gridSize; row += 1) {
-                const vFrac = row / (gridSize - 1);
-                const v7 = vStart + vFrac * span;
-                const latitude = Cesium.Math.toDegrees(
-                  rectangle.north - vFrac * (rectangle.north - rectangle.south)
-                );
-                const rowOffset = row * gridSize;
-                for (let col = 0; col < gridSize; col += 1) {
-                  const uFrac = col / (gridSize - 1);
-                  const u7 = uStart + uFrac * span;
-                  const longitude = Cesium.Math.toDegrees(
-                    rectangle.west + uFrac * (rectangle.east - rectangle.west)
-                  );
-                  const baseElev = tileSet
-                    ? sampleStitchedMdemUv(tileSet, u7, v7)
-                    : getMarsElevation(latitude, longitude, MDEM_NATIVE_MAX_LEVEL);
-                  // Higher LOD subdivides/interpolates the measured 200 m DEM only;
-                  // never invent sub-pixel terrain heights that diverge from the source.
-                  heights[rowOffset + col] = baseElev;
-                }
-              }
+          await molaRasterPromise;
+          const rectangle = marsTilingScheme.tileXYToRectangle(x, y, level);
+          const heights = new Float32Array(MOLA_TILE_SIZE * MOLA_TILE_SIZE);
+          for (let row = 0; row < MOLA_TILE_SIZE; row += 1) {
+            const latitude = Cesium.Math.toDegrees(
+              rectangle.north -
+                (row / (MOLA_TILE_SIZE - 1)) * (rectangle.north - rectangle.south)
+            );
+            const rowOffset = row * MOLA_TILE_SIZE;
+            for (let col = 0; col < MOLA_TILE_SIZE; col += 1) {
+              const longitude = Cesium.Math.toDegrees(
+                rectangle.west +
+                  (col / (MOLA_TILE_SIZE - 1)) * (rectangle.east - rectangle.west)
+              );
+              heights[rowOffset + col] = sampleElevationAt(longitude, latitude);
             }
-
-            return new Cesium.HeightmapTerrainData({
-              buffer: heights,
-              width: gridSize,
-              height: gridSize,
-              childTileMask,
-              structure: {
-                elementMultiplier: 1,
-                lowestEncodedHeight: MDEM_TERRAIN_MIN_HEIGHT,
-                highestEncodedHeight: MDEM_TERRAIN_MAX_HEIGHT,
-              },
-            });
-          } finally {
-            activeTerrainRequests = Math.max(0, activeTerrainRequests - 1);
           }
+
+          const terrainData = new Cesium.HeightmapTerrainData({
+            buffer: heights,
+            width: MOLA_TILE_SIZE,
+            height: MOLA_TILE_SIZE,
+            childTileMask: level < MOLA_MAX_LEVEL ? 15 : 0,
+            structure: {
+              elementMultiplier: 1,
+              lowestEncodedHeight: -10_000,
+              highestEncodedHeight: 25_000,
+            },
+          });
+          const createMesh = terrainData.createMesh.bind(terrainData);
+          terrainData.createMesh = (options: Record<string, unknown>) =>
+            createMesh({ ...options, skirtHeight: MOLA_SKIRT_HEIGHT_METERS });
+          return terrainData;
         })();
       },
     };
@@ -1875,12 +1816,16 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     const createSurfacePositionProperty = (
       latitude: number,
       longitude: number,
-      elevationMeters = getMarsElevation(latitude, longitude, 4),
+      _elevationMeters = getMarsElevation(latitude, longitude, 4),
       offsetMeters = 80
     ) =>
       new Cesium.CallbackProperty(
-        () =>
-          getExaggeratedSurfacePosition(latitude, longitude, elevationMeters, offsetMeters),
+        () => getExaggeratedSurfacePosition(
+          latitude,
+          longitude,
+          getMarsElevation(latitude, longitude, 4),
+          offsetMeters
+        ),
         false
       );
 
