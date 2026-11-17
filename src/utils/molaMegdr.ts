@@ -16,10 +16,22 @@ export function loadMolaMegdrRaster(): Promise<void> {
     heightmapLoadPromise = (async () => {
       const response = await fetch(HEIGHTMAP_URL);
       if (!response.ok) {
-        throw new Error(`MOLA heightmap request failed (${response.status} ${response.statusText}).`);
+        throw new Error(
+          `MOLA heightmap request failed for ${HEIGHTMAP_URL} (HTTP ${response.status} ${response.statusText}).`
+        );
       }
 
       const encodedPng = new Uint8Array(await response.arrayBuffer());
+      const pngSignature = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+      const hasPngSignature = pngSignature.every((byte, index) => encodedPng[index] === byte);
+      if (!hasPngSignature) {
+        const receivedSignature = Array.from(encodedPng.subarray(0, 8))
+          .map((byte) => byte.toString(16).padStart(2, '0'))
+          .join(' ');
+        throw new Error(
+          `MOLA heightmap at ${HEIGHTMAP_URL} is not a valid PNG (HTTP ${response.status}; received signature ${receivedSignature || '<empty>'}).`
+        );
+      }
       const image = decode(encodedPng);
       if (
         image.width !== WIDTH ||
