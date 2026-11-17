@@ -1,10 +1,11 @@
-import { MARS_CONSTANTS, getMarsElevation } from '../data/marsData';
+import { MARS_CONSTANTS } from '../data/marsData';
 import { NASA_ODYSSEY_WATER_GRID } from '../data/marsWaterGrid';
 import {
   computeSurfaceRadiationDoseFromElev,
   getMarsSurfaceTempSample,
   sampleTesTemperatureFast,
 } from './marsOverlayMaps';
+import { sampleElevationAt } from './molaMegdr';
 
 export interface MarsWaterSample {
   /** Weight-percent water or Water-Equivalent Hydrogen (wt% H2O / WEH) */
@@ -310,7 +311,7 @@ export function analyzeMarsSiteRectangle(
       const u = (ix + 0.5) / GRID_N;
       const lon = wrapLonDeg(bounds.westLon + u * dLonDeg);
 
-      const elev = getMarsElevation(lat, lon, detailLevel);
+      const elev = sampleElevationAt(lon, lat);
       rowElev.push(elev);
       if (elev < minElev) minElev = elev;
       if (elev > maxElev) maxElev = elev;

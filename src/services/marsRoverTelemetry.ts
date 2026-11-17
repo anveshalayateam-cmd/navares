@@ -1,4 +1,5 @@
-import { MARS_TARGETS, getMarsElevation } from '../data/marsData';
+import { MARS_TARGETS } from '../data/marsData';
+import { sampleElevationAt } from '../utils/molaMegdr';
 
 export type RoverTelemetryStatus = 'live' | 'cached' | 'offline-fallback';
 
@@ -111,7 +112,7 @@ export function loadCachedRoverTelemetry(): Record<string, RoverTelemetryFix> {
           elevationMeters:
             typeof item.elevationMeters === 'number' && Number.isFinite(item.elevationMeters)
               ? item.elevationMeters
-              : getMarsElevation(itemLat, itemLon, 4),
+              : sampleElevationAt(itemLon, itemLat),
           recordedAtUtc: item.recordedAtUtc || fallback[id].recordedAtUtc,
           checkedAtUtc: item.checkedAtUtc || fallback[id].checkedAtUtc,
           sourceLabel: item.sourceLabel || 'Cached NASA/JPL Telemetry',
@@ -218,7 +219,7 @@ function extractLatestWaypointFromGeoJson(
     roverId,
     latitude: lat,
     longitude: lon,
-    elevationMeters: Number.isFinite(elevRaw) ? Math.round(elevRaw) : getMarsElevation(lat, lon, 4),
+    elevationMeters: Number.isFinite(elevRaw) ? Math.round(elevRaw) : sampleElevationAt(lon, lat),
     sol: Number.isFinite(solNum) && solNum > 0 ? Math.round(solNum) : undefined,
     totalDriveKm:
       Number.isFinite(distMeters) && distMeters > 0

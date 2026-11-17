@@ -4466,5 +4466,3 @@ export const HAZARD_ZONES: HazardZone[] = [
     summary: 'Micron-scale electrostatic dust with ~0.5–1% calcium perchlorate compromises airlock seals and solar arrays.',
   },
 ];
-
-export { getMarsElevation, sampleMarsElevationMeters } from '../utils/marsElevation';

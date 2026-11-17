@@ -7,7 +7,6 @@
  *    down to sub-meter detail (levels 13..19) paired with matching directional rock shading.
  */
 
-import { sampleElevationAt } from './molaMegdr';
 
 const DEG_TO_RAD = Math.PI / 180;
 const MARS_MEAN_RADIUS_M = 3_396_190;
@@ -448,106 +447,6 @@ function evalEllipticalFeatures(
   return total;
 }
 
-function sampleRawMacroElevationMeters(lonDeg: number, latDeg: number): number {
-  const lonRad = lonDeg * DEG_TO_RAD;
-  const latRad = latDeg * DEG_TO_RAD;
-  const cosLat = Math.cos(latRad);
-  const nx = cosLat * Math.cos(lonRad);
-  const ny = cosLat * Math.sin(lonRad);
-  const nz = Math.sin(latRad);
-
-  // Domain-warped coordinates for natural planetary dichotomy & macro ridges
-  const warpX = fbm3D(nx * 2.6 + 1.3, ny * 2.6 - 0.7, nz * 2.6 + 2.1, 3);
-  const warpY = fbm3D(nx * 2.6 - 2.4, ny * 2.6 + 1.9, nz * 2.6 - 1.1, 3);
-
-  const dichotomyBoundaryLat =
-    3.5 +
-    12.5 * Math.cos((lonDeg - 32.0) * DEG_TO_RAD) -
-    10.5 * Math.cos((lonDeg + 108.0) * DEG_TO_RAD) -
-    8.5 * Math.exp(-Math.pow(wrapLonDiff(lonDeg, 138.0) / 26.0, 2)) -
-    9.5 * Math.exp(-Math.pow(wrapLonDiff(lonDeg, -10.0) / 24.0, 2)) +
-    warpX * 3.8;
-  const dichotomy = -1750 - 2050 * Math.tanh((latDeg - dichotomyBoundaryLat) / 14.5);
-
-  const warpedLon = lonDeg + warpX * 1.05;
-  const warpedLat = clamp(latDeg + warpY * 0.85, -89.99, 89.99);
-
-  // 1. Broad Crustal Provinces & Major Impact Basins
-  const provinces = evalEllipticalFeatures(warpedLon, warpedLat, REGIONAL_PROVINCES);
-
-  // 2. Volcanic Shields, Tholi, Basal Scarps & Summit Calderas
-  let volcanoes = 0;
-  for (let i = 0; i < VOLCANO_FEATURES.length; i++) {
-    const v = VOLCANO_FEATURES[i];
-    const dy = latDeg - v.lat;
-    if (dy * dy >= v.cutoffDeg2) continue;
-    const dx = wrapLonDiff(lonDeg, v.lon);
-    const r2 = dx * dx + dy * dy;
-    if (r2 >= v.cutoffDeg2) continue;
-    const r = Math.sqrt(r2);
-    const lobeWarp = 1 + 0.055 * fbm3D(nx * 14 + 3.1, ny * 14 - 1.4, nz * 14 + 0.8, 2);
-    const effR = r * lobeWarp;
-    volcanoes += v.peakAmp * Math.exp(-(effR * effR) / (v.sigmaDeg * v.sigmaDeg));
-    if (v.scarpRadiusDeg && v.scarpAmp) {
-      volcanoes += v.scarpAmp * (0.5 - 0.5 * Math.tanh((effR - v.scarpRadiusDeg) / 0.38));
-    }
-    if (v.calderaRadiusDeg && v.calderaDepth) {
-      volcanoes -= v.calderaDepth * Math.exp(-r2 / (v.calderaRadiusDeg * v.calderaRadiusDeg));
-    }
-  }
-
-  // 3. Tectonic Chasmata & Outflow Channel Segments (with raised canyon shoulders)
-  let canyons = 0;
-  for (let i = 0; i < CANYON_SEGMENTS.length; i++) {
-    const seg = CANYON_SEGMENTS[i];
-    const minSegLat = Math.min(seg.lat1, seg.lat2) - seg.halfWidthDeg * 3.5;
-    const maxSegLat = Math.max(seg.lat1, seg.lat2) + seg.halfWidthDeg * 3.5;
-    if (latDeg < minSegLat || latDeg > maxSegLat) continue;
-
-    const { distDeg } = segmentOffsetDeg(lonDeg, latDeg, seg.lon1, seg.lat1, seg.lon2, seg.lat2);
-    const w = seg.halfWidthDeg;
-    if (distDeg > w * 3.8) continue;
-
-    const u = distDeg / w;
-    canyons += seg.depthM * Math.exp(-Math.pow(u, 2.35));
-    if (seg.shoulderAmp) {
-      const sh = u - 1.55;
-      canyons += seg.shoulderAmp * Math.exp(-(sh * sh) / 0.45);
-    }
-  }
-
-  // 4. Named Impact Craters (pinpoint coordinates)
-  const craters = evalEllipticalFeatures(lonDeg, latDeg, CRATER_FEATURES);
-
-  // 5. Planum Boreum & Planum Australe Polar Layered Ice Caps
-  const polarBoreum = latDeg > 76 ? 2500 * Math.exp(-Math.pow((90 - latDeg) / 7.2, 2)) : 0;
-  const polarAustrale = latDeg < -76 ? 1750 * Math.exp(-Math.pow((-90 - latDeg) / 7.8, 2)) : 0;
-
-  // 6. Geological Roughness
-  const highlandFactor = clamp(0.42 + 0.65 * (0.5 - 0.5 * Math.tanh((latDeg - dichotomyBoundaryLat) / 14.0)), 0.35, 1.1);
-  const macroFbm = fbm3D(nx * 5.2 + warpX * 0.45, ny * 5.2 + warpY * 0.45, nz * 5.2, 4);
-  const macroRidges = ridged3D(nx * 9.5 + 4.2, ny * 9.5 - 2.1, nz * 9.5 + 1.7, 3);
-  const macroTerrain = highlandFactor * (420 * macroFbm + 190 * macroRidges);
-
-  return (
-    dichotomy +
-    provinces +
-    volcanoes +
-    canyons +
-    craters +
-    polarBoreum +
-    polarAustrale +
-    macroTerrain
-  );
-}
-
-/**
- * All 97 USGS / NASA MOLA landmark site specifications:
- *  - lat, lon: exact catalog coordinates
- *  - targetElevM: verified NASA MOLA elevation datum (meters)
- *  - sigmaDeg: geological footprint radius for smooth residual pinning
- *  - geology: site-specific rock / regolith / ice archetype for 3D rock rendering
- */
 interface LandmarkMolaAnchor {
   lat: number;
   lon: number;
@@ -679,44 +578,6 @@ const LANDMARK_ANCHORS: LandmarkMolaAnchor[] = RAW_LANDMARK_SPECS.map(
   })
 );
 
-function evalLandmarkCalibration(lonDeg: number, latDeg: number): number {
-  let corr = 0;
-  for (let i = 0; i < LANDMARK_ANCHORS.length; i++) {
-    const a = LANDMARK_ANCHORS[i];
-    const dy = latDeg - a.lat;
-    if (dy > a.cutoffDeg || dy < -a.cutoffDeg) continue;
-    const dx = wrapLonDiff(lonDeg, a.lon);
-    if (dx > a.cutoffDeg || dx < -a.cutoffDeg) continue;
-    const r2 = dx * dx + dy * dy;
-    const w = Math.exp(-r2 * a.invSigma2);
-    if (w > 1e-4) {
-      corr += a.deltaM * w;
-    }
-  }
-  return corr;
-}
-
-// Multi-pass calibration so all 97 landmarks match NASA MOLA elevations simultaneously
-(function solveLandmarkAnchors() {
-  const rawBase = LANDMARK_ANCHORS.map((a) => sampleRawMacroElevationMeters(a.lon, a.lat));
-  for (let pass = 0; pass < 4; pass++) {
-    for (let i = 0; i < LANDMARK_ANCHORS.length; i++) {
-      const a = LANDMARK_ANCHORS[i];
-      const current = rawBase[i] + evalLandmarkCalibration(a.lon, a.lat);
-      a.deltaM += a.targetElevM - current;
-    }
-  }
-})();
-
-export function sampleMarsElevationMeters(lonDeg: number, latDeg: number): number {
-  return sampleElevationAt(lonDeg, latDeg, () =>
-    sampleRawMacroElevationMeters(lonDeg, latDeg) + evalLandmarkCalibration(lonDeg, latDeg)
-  );
-}
-
-/**
- * Classifies local surface geology archetype for micro-terrain rock & texture rendering.
- */
 export function classifyMarsSiteGeology(latDeg: number, lonDeg: number): MarsSiteGeology {
   let bestDist2 = Infinity;
   let bestType: MarsSiteGeology = Math.abs(latDeg) > 72 ? 'polar-ice' : 'aeolian-plain';
@@ -963,12 +824,6 @@ export function sampleRockMicroReliefAtLatLon(
  * During its one-time startup fetch only, falls back to the calibrated local model.
  * Procedural rock detail remains a visual overlay and is never added to elevations.
  */
-export function getMarsElevation(latDeg: number, lonDeg: number, _terrainLevel = 0): number {
-  return sampleElevationAt(lonDeg, latDeg, () =>
-    sampleRawMacroElevationMeters(lonDeg, latDeg) + evalLandmarkCalibration(lonDeg, latDeg)
-  );
-}
-
 /**
  * Fast single-pass micro-rock sample at (latDeg, lonDeg) for vectorized tile shading.
  */
@@ -992,7 +847,7 @@ export function sampleMarsRockMicroSample(
 
 /**
  * Evaluates directional sunlit rock/boulder micro-shading & mineral albedo RGBA
- * directly aligned with the 3D heightfield boulders in `getMarsElevation`.
+ * directly aligned with the MOLA heightfield used by the globe.
  * Accepts optional pre-resolved `geology` so tile loops skip per-pixel classification.
  */
 export function sampleMarsRockShadingPixel(

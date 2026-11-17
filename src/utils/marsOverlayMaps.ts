@@ -1,5 +1,5 @@
-import { sampleMarsElevationMeters } from '../data/marsData';
 import { NASA_TES_TEMPERATURE_GRID } from '../data/marsTesTemperatureGrid';
+import { sampleElevationAt } from './molaMegdr';
 
 /**
  * Computes calibrated surface radiation dose (mSv/day) from surface elevation (meters)
@@ -18,7 +18,7 @@ export function computeSurfaceRadiationDoseFromElev(elevMeters: number): number 
  * using Martian atmospheric column shielding calibrated to Curiosity MSL RAD (~0.64 mSv/day).
  */
 export function computeSurfaceRadiationDose(lonDeg: number, latDeg: number): number {
-  return computeSurfaceRadiationDoseFromElev(sampleMarsElevationMeters(lonDeg, latDeg));
+  return computeSurfaceRadiationDoseFromElev(sampleElevationAt(lonDeg, latDeg));
 }
 
 export function doseToBlackGreenRgb(dose: number): [number, number, number] {
@@ -413,6 +413,6 @@ export function generateMarsTemperatureDataUrl(
 
 export function generateMarsElevationGrayscaleDataUrl(width = 2048, height = 1024): string {
   return renderEquirectangularMap(width, height, (lon, lat) =>
-    elevationToGrayscaleRgb(sampleMarsElevationMeters(lon, lat))
+    elevationToGrayscaleRgb(sampleElevationAt(lon, lat))
   );
 }

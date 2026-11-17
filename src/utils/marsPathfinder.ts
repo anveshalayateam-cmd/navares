@@ -2,9 +2,9 @@ import {
   MARS_CONSTANTS,
   MARS_TARGETS,
   MarsTarget,
-  getMarsElevation,
 } from '../data/marsData';
 import { sampleSatelliteOrbitArc } from './marsMath';
+import { sampleElevationAt } from './molaMegdr';
 import {
   computeSurfaceRadiationDose,
   computeSurfaceRadiationDoseFromElev,
@@ -275,7 +275,7 @@ export function computeOptimalSurvivalRoute(
   // Sample direct path peak radiation for safety comparison
   let directPeakRad = 0;
   for (const pt of directArcPoints) {
-    const ptElev = getMarsElevation(pt.latDeg, pt.lonDeg, terrainDetailLevel);
+    const ptElev = sampleElevationAt(pt.lonDeg, pt.latDeg);
     const rad = computeSurfaceRadiationDoseFromElev(ptElev);
     if (rad > directPeakRad) directPeakRad = rad;
   }
@@ -353,7 +353,7 @@ export function computeOptimalSurvivalRoute(
     if (existing) return existing;
 
     const { latDeg, lonDeg } = getNodeCoords(row, col);
-    const elev = getMarsElevation(latDeg, lonDeg, terrainDetailLevel);
+    const elev = sampleElevationAt(lonDeg, latDeg);
     const rad = computeSurfaceRadiationDoseFromElev(elev);
     const temp = getMarsSurfaceTempC(latDeg, lonDeg, solarLongitudeLs);
 
@@ -543,8 +543,8 @@ export function computeOptimalSurvivalRoute(
       const smoothLat = 0.25 * prev.latDeg + 0.5 * curr.latDeg + 0.25 * next.latDeg;
       const smoothLon = wrapLongitudeDeg(curr.lonDeg + 0.25 * (dPrev + dNext));
 
-      const origElev = getMarsElevation(curr.latDeg, curr.lonDeg, terrainDetailLevel);
-      const smoothElev = getMarsElevation(smoothLat, smoothLon, terrainDetailLevel);
+      const origElev = sampleElevationAt(curr.lonDeg, curr.latDeg);
+      const smoothElev = sampleElevationAt(smoothLon, smoothLat);
       const origRad = computeSurfaceRadiationDoseFromElev(origElev);
       const smoothRad = computeSurfaceRadiationDoseFromElev(smoothElev);
       if (smoothRad <= origRad * 1.12) {
@@ -559,7 +559,7 @@ export function computeOptimalSurvivalRoute(
 
   // Sample metrics along the optimal path
   const waypoints: RouteWaypoint[] = rawLatLons.map((pt) => {
-    const elevMeters = getMarsElevation(pt.latDeg, pt.lonDeg, terrainDetailLevel);
+    const elevMeters = sampleElevationAt(pt.lonDeg, pt.latDeg);
     return {
       latDeg: pt.latDeg,
       lonDeg: pt.lonDeg,

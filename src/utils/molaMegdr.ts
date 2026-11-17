@@ -35,6 +35,9 @@ export function loadMolaMegdrRaster(): Promise<void> {
       }
 
       heightValues = image.data;
+      console.info(
+        `[MOLA] Melas Chasma sample (-70.5°, -10.5°): ${Math.round(sampleElevationAt(-70.5, -10.5))} m`
+      );
     })();
   }
   return heightmapLoadPromise;

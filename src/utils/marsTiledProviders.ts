@@ -1,4 +1,3 @@
-import { getMarsElevation } from '../data/marsData';
 import {
   classifyMarsSiteGeology,
   sampleMarsRockMicroSample,
@@ -15,6 +14,7 @@ import {
   sampleTesTemperatureFast,
   tempToRainbowRgb,
 } from './marsOverlayMaps';
+import { sampleElevationAt } from './molaMegdr';
 
 export type MarsProceduralLayerMode =
   | 'elevation'
@@ -322,7 +322,7 @@ export function createMarsProceduralImageryProvider({
               data[idx + 3] = 255;
             }
           } else if (mode === 'radiation') {
-            const elevMeters = getMarsElevation(latDeg, lonDeg, elevLevel);
+            const elevMeters = sampleElevationAt(lonDeg, latDeg);
             const dose = computeSurfaceRadiationDoseFromElev(elevMeters);
             const [r, g, b] = doseToBlackGreenRgb(dose);
             data[idx] = r;
@@ -338,7 +338,7 @@ export function createMarsProceduralImageryProvider({
               elevationTileScale;
             const elevMeters = elevationTileSet
               ? sampleStitchedMdemUv(elevationTileSet, tileU, tileV)
-              : getMarsElevation(latDeg, lonDeg, elevLevel);
+              : sampleElevationAt(lonDeg, latDeg);
             const [r, g, b] = elevationToGrayscaleRgb(elevMeters);
             data[idx] = r;
             data[idx + 1] = g;

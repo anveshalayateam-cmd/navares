@@ -5,7 +5,6 @@ import {
   MARS_TARGETS,
   MarsTarget,
   TelemetryMode,
-  getMarsElevation,
 } from '../data/marsData';
 import { getLocationAreaInfo } from '../data/marsFeatureOutlines';
 import { LiveOrbiterElements } from '../services/marsOrbiterSync';
@@ -638,7 +637,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     return {
       latitude: target.latitude,
       longitude: target.longitude,
-      elevationMeters: getMarsElevation(target.latitude, target.longitude, 4),
+      elevationMeters: sampleElevationAt(target.longitude, target.latitude),
     };
   };
 
@@ -664,7 +663,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     const latOffset = lookAheadMeters / metersPerDegLat;
     const cameraLat = Math.max(-88.5, lat - latOffset);
     const terrainHeight =
-      getMarsElevation(cameraLat, lon, 4) * viewer.scene.verticalExaggeration;
+      sampleElevationAt(lon, cameraLat) * viewer.scene.verticalExaggeration;
 
     viewer.camera.flyTo({
       destination: Cesium.Cartesian3.fromDegrees(
@@ -810,7 +809,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     const latitude = Cesium.Math.toDegrees(cartographic.latitude);
     const longitude = Cesium.Math.toDegrees(cartographic.longitude);
     const terrainHeight =
-      getMarsElevation(latitude, longitude, 4) * viewer.scene.verticalExaggeration;
+      sampleElevationAt(longitude, latitude) * viewer.scene.verticalExaggeration;
     const target = Cesium.Cartesian3.fromDegrees(
       longitude,
       latitude,
@@ -962,11 +961,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
         const Cesium = window.Cesium;
         let terrainElev = 0;
         if (carto && Cesium) {
-          terrainElev = getMarsElevation(
-            Cesium.Math.toDegrees(carto.latitude),
-            Cesium.Math.toDegrees(carto.longitude),
-            carto.height < 40_000 ? 14 : 4
-          );
+          terrainElev = sampleElevationAt(Cesium.Math.toDegrees(carto.longitude), Cesium.Math.toDegrees(carto.latitude));
         }
         const rawHeight = carto ? carto.height : 10000;
         const clearanceM = Math.max(MIN_CAMERA_HEIGHT_METERS, rawHeight - terrainElev);
@@ -1006,11 +1001,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
 
     const carto = marsEllipsoid.cartesianToCartographic(viewer.camera.positionWC);
     const terrainElev = carto
-      ? getMarsElevation(
-          Cesium.Math.toDegrees(carto.latitude),
-          Cesium.Math.toDegrees(carto.longitude),
-          carto.height < 40_000 ? 14 : 4
-        )
+      ? sampleElevationAt(Cesium.Math.toDegrees(carto.longitude), Cesium.Math.toDegrees(carto.latitude))
       : 0;
     const rawHeight = carto ? carto.height : 10000;
     const clearanceM = Math.max(MIN_CAMERA_HEIGHT_METERS, rawHeight - terrainElev);
@@ -1804,7 +1795,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     const getExaggeratedSurfacePosition = (
       latitude: number,
       longitude: number,
-      elevationMeters = getMarsElevation(latitude, longitude, 4),
+      elevationMeters = sampleElevationAt(longitude, latitude),
       offsetMeters = 80
     ) =>
       Cesium.Cartesian3.fromDegrees(
@@ -1816,14 +1807,14 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     const createSurfacePositionProperty = (
       latitude: number,
       longitude: number,
-      _elevationMeters = getMarsElevation(latitude, longitude, 4),
+      _elevationMeters = sampleElevationAt(longitude, latitude),
       offsetMeters = 80
     ) =>
       new Cesium.CallbackProperty(
         () => getExaggeratedSurfacePosition(
           latitude,
           longitude,
-          getMarsElevation(latitude, longitude, 4),
+          sampleElevationAt(longitude, latitude),
           offsetMeters
         ),
         false
@@ -1838,7 +1829,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
         Cesium.Cartesian3.fromDegrees(
           longitude,
           latitude,
-          getMarsElevation(latitude, longitude, 4) * exaggeration + offsetMeters,
+          sampleElevationAt(longitude, latitude) * exaggeration + offsetMeters,
           marsEllipsoid
         );
       const addPolyline = (
@@ -1928,7 +1919,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     for (const target of MARS_TARGETS) {
       const colorHex = CATEGORY_COLORS[target.category];
       const cesiumColor = Cesium.Color.fromCssColorString(colorHex);
-      const targetElevation = getMarsElevation(target.latitude, target.longitude, 4);
+      const targetElevation = sampleElevationAt(target.longitude, target.latitude);
       const isPrimaryLabel =
         target.category === 'satellite'
           ? PRIMARY_GLOBAL_SATELLITE_IDS.has(target.id)
@@ -2214,11 +2205,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
       const carto = marsEllipsoid.cartesianToCartographic(viewer.camera.positionWC);
       if (!carto) return DEFAULT_CAMERA_HEIGHT_METERS;
       if (carto.height > 150_000) return Math.max(0, carto.height);
-      const groundElev = getMarsElevation(
-        Cesium.Math.toDegrees(carto.latitude),
-        Cesium.Math.toDegrees(carto.longitude),
-        carto.height < 40_000 ? 12 : 4
-      );
+      const groundElev = sampleElevationAt(Cesium.Math.toDegrees(carto.longitude), Cesium.Math.toDegrees(carto.latitude));
       return Math.max(0, carto.height - groundElev);
     };
     const getCameraDetailLevel = () => {
@@ -2239,9 +2226,9 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     const sampleClimbingElevations = (latDeg: number, lonDeg: number) => ({
       latDeg,
       lonDeg,
-      elev0: getMarsElevation(latDeg, lonDeg, 0),
-      elev4: getMarsElevation(latDeg, lonDeg, 4),
-      elev11: getMarsElevation(latDeg, lonDeg, 11),
+      elev0: sampleElevationAt(lonDeg, latDeg),
+      elev4: sampleElevationAt(lonDeg, latDeg),
+      elev11: sampleElevationAt(lonDeg, latDeg),
     });
     const resolveLodClimbElevMeters = (
       sample: { elev0: number; elev4: number; elev11: number },
@@ -2764,7 +2751,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
             ? elevA
             : i === segments
               ? elevB
-              : getMarsElevation(latDeg, lonDeg, detailLevel);
+              : sampleElevationAt(lonDeg, latDeg);
         samples.push({ latDeg, lonDeg, elevMeters });
 
         if (i > 0) {
@@ -2820,7 +2807,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
       );
       const latDeg = Cesium.Math.toDegrees(carto.latitude);
       const lonDeg = Cesium.Math.toDegrees(carto.longitude);
-      const elevMeters = getMarsElevation(latDeg, lonDeg, getCameraDetailLevel());
+      const elevMeters = sampleElevationAt(lonDeg, latDeg);
       const cartesian = getExaggeratedSurfacePosition(
         latDeg,
         lonDeg,
@@ -2947,7 +2934,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
         pts.push({
           latDeg: latD,
           lonDeg: lonD,
-          elevationMeters: getMarsElevation(latD, lonD, 4),
+          elevationMeters: sampleElevationAt(lonD, latD),
         });
       }
       return pts;
@@ -2984,7 +2971,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
           const samples = result.directArcPoints.map((pt) => ({
             latDeg: pt.latDeg,
             lonDeg: pt.lonDeg,
-            elevationMeters: getMarsElevation(pt.latDeg, pt.lonDeg, routeDetailLevel),
+            elevationMeters: sampleElevationAt(pt.lonDeg, pt.latDeg),
           }));
           poly.positions = new Cesium.CallbackProperty(
             () => getTerrainPositions(samples, directOffset),
@@ -3001,7 +2988,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
           const samples = result.waypoints.map((waypoint) => ({
             latDeg: waypoint.latDeg,
             lonDeg: waypoint.lonDeg,
-            elevationMeters: getMarsElevation(waypoint.latDeg, waypoint.lonDeg, routeDetailLevel),
+            elevationMeters: sampleElevationAt(waypoint.lonDeg, waypoint.latDeg),
           }));
           poly.positions = new Cesium.CallbackProperty(
             () => getTerrainPositions(samples, optimalOffset),
@@ -3161,11 +3148,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
             pickedEndpoint = {
               latDeg: matchedPin.latitude,
               lonDeg: matchedPin.longitude,
-              elevMeters: getMarsElevation(
-                matchedPin.latitude,
-                matchedPin.longitude,
-                getCameraDetailLevel()
-              ),
+              elevMeters: sampleElevationAt(matchedPin.longitude, matchedPin.latitude),
               label: matchedPin.shortName,
             };
           }
@@ -3437,7 +3420,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
         const latDeg = Cesium.Math.toDegrees(camCarto.latitude);
         const lonDeg = Cesium.Math.toDegrees(camCarto.longitude);
         const minSurfaceHeight =
-          getMarsElevation(latDeg, lonDeg, camCarto.height < 8_000 ? 15 : 6) + 7.5;
+          sampleElevationAt(lonDeg, latDeg) + 7.5;
         if (camCarto.height < minSurfaceHeight) {
           viewer.camera.position = Cesium.Cartesian3.fromRadians(
             camCarto.longitude,
@@ -3609,11 +3592,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
       const rawCamHeight = camCarto ? camCarto.height : DEFAULT_CAMERA_HEIGHT_METERS;
       let camClearanceM = Math.max(0, rawCamHeight);
       if (camCarto && rawCamHeight < 250_000) {
-        const groundElev = getMarsElevation(
-          Cesium.Math.toDegrees(camCarto.latitude),
-          Cesium.Math.toDegrees(camCarto.longitude),
-          rawCamHeight < 35_000 ? 14 : 4
-        );
+        const groundElev = sampleElevationAt(Cesium.Math.toDegrees(camCarto.longitude), Cesium.Math.toDegrees(camCarto.latitude));
         camClearanceM = Math.max(0, rawCamHeight - groundElev);
       }
 
@@ -3994,11 +3973,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     if (viewer && !viewer.isDestroyed() && marsEllipsoid) {
       const carto = marsEllipsoid.cartesianToCartographic(viewer.camera.position);
       if (carto) {
-        const groundElev = getMarsElevation(
-          (carto.latitude * 180) / Math.PI,
-          (carto.longitude * 180) / Math.PI,
-          carto.height < 35_000 ? 14 : 4
-        );
+        const groundElev = sampleElevationAt((carto.longitude * 180) / Math.PI, (carto.latitude * 180) / Math.PI);
         camHeight = Math.max(0, carto.height - groundElev);
       }
     }
