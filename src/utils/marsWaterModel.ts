@@ -25,6 +25,11 @@ export interface SiteBounds {
   eastLon: number;
 }
 
+export interface SitePolygonVertex {
+  latDeg: number;
+  lonDeg: number;
+}
+
 export type HabitabilityTier =
   | 'Prime Habitat Candidate'
   | 'Viable with Shielding & ISRU'
@@ -33,10 +38,12 @@ export type HabitabilityTier =
 
 export interface SiteAnalysisResult {
   bounds: SiteBounds;
+  vertices?: SitePolygonVertex[];
   centerLatDeg: number;
   centerLonDeg: number;
   widthKm: number;
   heightKm: number;
+  perimeterKm?: number;
   areaKm2: number;
   sampleCount: number;
   elevation: {
@@ -255,27 +262,36 @@ export function computeRectangleDimensionsKm(bounds: SiteBounds): {
   return { widthKm, heightKm, areaKm2 };
 }
 
-/**
- * Evaluates a selected rectangular Martian site across Elevation, Radiation,
- * Temperature (NASA TES), and Water Availability (NASA Odyssey GRS/NS),
- * returning summary statistics and a 0-100 Habitability Condition Score.
- */
-export function analyzeMarsSiteRectangle(
-  bounds: SiteBounds,
-  solarLongitudeLs = 0
-): SiteAnalysisResult {
-  const { widthKm, heightKm, areaKm2 } = computeRectangleDimensionsKm(bounds);
-  const dLonDeg = getPositiveLonSpanDeg(bounds.westLon, bounds.eastLon);
-  const dLatDeg = Math.abs(bounds.northLat - bounds.southLat);
-
-  const centerLatDeg = (bounds.southLat + bounds.northLat) * 0.5;
-  const centerLonDeg = wrapLonDeg(bounds.westLon + dLonDeg * 0.5);
-
-  const maxSpanKm = Math.max(widthKm, heightKm);
-  const detailLevel = maxSpanKm < 15 ? 11 : maxSpanKm < 120 ? 8 : 6;
-
-  const GRID_N = 12;
-  const elevGrid: number[][] = [];
+function summarizeSiteMetrics({
+  bounds,
+  vertices,
+  centerLatDeg,
+  centerLonDeg,
+  widthKm,
+  heightKm,
+  perimeterKm,
+  areaKm2,
+  sampleElevs,
+  sampleCoords,
+  slopeSumDeg,
+  slopeCount,
+  solarLongitudeLs,
+}: {
+  bounds: SiteBounds;
+  vertices?: SitePolygonVertex[];
+  centerLatDeg: number;
+  centerLonDeg: number;
+  widthKm: number;
+  heightKm: number;
+  perimeterKm?: number;
+  areaKm2: number;
+  sampleElevs: number[];
+  sampleCoords: Array<{ latDeg: number; lonDeg: number }>;
+  slopeSumDeg: number;
+  slopeCount: number;
+  solarLongitudeLs: number;
+}): SiteAnalysisResult {
+  const totalSamples = Math.max(1, sampleCoords.length);
 
   let minElev = Infinity;
   let maxElev = -Infinity;
@@ -300,74 +316,42 @@ export function analyzeMarsSiteRectangle(
   let grsWaterCount = 0;
   let wehWaterCount = 0;
 
-  const totalSamples = GRID_N * GRID_N;
+  for (let i = 0; i < sampleCoords.length; i++) {
+    const { latDeg: lat, lonDeg: lon } = sampleCoords[i];
+    const elev = sampleElevs[i];
+    if (elev < minElev) minElev = elev;
+    if (elev > maxElev) maxElev = elev;
+    sumElev += elev;
 
-  for (let iy = 0; iy < GRID_N; iy++) {
-    const v = (iy + 0.5) / GRID_N;
-    const lat = bounds.southLat + v * dLatDeg;
-    const rowElev: number[] = [];
+    const rad = computeSurfaceRadiationDoseFromElev(elev);
+    if (rad < minRad) minRad = rad;
+    if (rad > maxRad) maxRad = rad;
+    sumRad += rad;
 
-    for (let ix = 0; ix < GRID_N; ix++) {
-      const u = (ix + 0.5) / GRID_N;
-      const lon = wrapLonDeg(bounds.westLon + u * dLonDeg);
-
-      const elev = sampleElevationAt(lon, lat);
-      rowElev.push(elev);
-      if (elev < minElev) minElev = elev;
-      if (elev > maxElev) maxElev = elev;
-      sumElev += elev;
-
-      const rad = computeSurfaceRadiationDoseFromElev(elev);
-      if (rad < minRad) minRad = rad;
-      if (rad > maxRad) maxRad = rad;
-      sumRad += rad;
-
-      const fastTemp = sampleTesTemperatureFast(lat, lon, solarLongitudeLs);
-      const resolvedTemp =
-        fastTemp !== null ? fastTemp : getMarsSurfaceTempSample(lat, lon, solarLongitudeLs)?.tempC ?? null;
-      if (resolvedTemp !== null && Number.isFinite(resolvedTemp)) {
-        if (resolvedTemp < minTemp) minTemp = resolvedTemp;
-        if (resolvedTemp > maxTemp) maxTemp = resolvedTemp;
-        sumTemp += resolvedTemp;
-        validTempCount++;
-      }
-
-      const waterSample = sampleMarsWaterAvailability(lat, lon);
-      if (waterSample.waterWtPct < minWater) minWater = waterSample.waterWtPct;
-      if (waterSample.waterWtPct > maxWater) maxWater = waterSample.waterWtPct;
-      sumWater += waterSample.waterWtPct;
-      if (waterSample.nsEpithermalCps !== null) {
-        sumNsCps += waterSample.nsEpithermalCps;
-        nsCpsCount++;
-      }
-      if (waterSample.uncertaintyWtPct !== null) {
-        sumSigma += waterSample.uncertaintyWtPct;
-        sigmaCount++;
-      }
-      if (waterSample.source === 'ODY-GRS H2O') grsWaterCount++;
-      else wehWaterCount++;
+    const fastTemp = sampleTesTemperatureFast(lat, lon, solarLongitudeLs);
+    const resolvedTemp =
+      fastTemp !== null ? fastTemp : getMarsSurfaceTempSample(lat, lon, solarLongitudeLs)?.tempC ?? null;
+    if (resolvedTemp !== null && Number.isFinite(resolvedTemp)) {
+      if (resolvedTemp < minTemp) minTemp = resolvedTemp;
+      if (resolvedTemp > maxTemp) maxTemp = resolvedTemp;
+      sumTemp += resolvedTemp;
+      validTempCount++;
     }
-    elevGrid.push(rowElev);
-  }
 
-  // Estimate mean local terrain slope from interior cell elevation steps
-  const stepXKm = Math.max(0.02, widthKm / GRID_N);
-  const stepYKm = Math.max(0.02, heightKm / GRID_N);
-  let slopeSumDeg = 0;
-  let slopeCount = 0;
-  for (let iy = 0; iy < GRID_N; iy++) {
-    for (let ix = 0; ix < GRID_N; ix++) {
-      if (ix + 1 < GRID_N) {
-        const dzKm = Math.abs(elevGrid[iy][ix + 1] - elevGrid[iy][ix]) / 1000;
-        slopeSumDeg += (Math.atan2(dzKm, stepXKm) * 180) / Math.PI;
-        slopeCount++;
-      }
-      if (iy + 1 < GRID_N) {
-        const dzKm = Math.abs(elevGrid[iy + 1][ix] - elevGrid[iy][ix]) / 1000;
-        slopeSumDeg += (Math.atan2(dzKm, stepYKm) * 180) / Math.PI;
-        slopeCount++;
-      }
+    const waterSample = sampleMarsWaterAvailability(lat, lon);
+    if (waterSample.waterWtPct < minWater) minWater = waterSample.waterWtPct;
+    if (waterSample.waterWtPct > maxWater) maxWater = waterSample.waterWtPct;
+    sumWater += waterSample.waterWtPct;
+    if (waterSample.nsEpithermalCps !== null) {
+      sumNsCps += waterSample.nsEpithermalCps;
+      nsCpsCount++;
     }
+    if (waterSample.uncertaintyWtPct !== null) {
+      sumSigma += waterSample.uncertaintyWtPct;
+      sigmaCount++;
+    }
+    if (waterSample.source === 'ODY-GRS H2O') grsWaterCount++;
+    else wehWaterCount++;
   }
 
   const meanElev = sumElev / totalSamples;
@@ -394,7 +378,6 @@ export function analyzeMarsSiteRectangle(
         : 'ODY-NS Epithermal WEH';
 
   // --- Habitability Sub-Scores (each 0-100) ---
-  // 1) Water / ISRU Availability (30%)
   let waterScore: number;
   if (meanWater >= 25) {
     waterScore = 96;
@@ -409,10 +392,8 @@ export function analyzeMarsSiteRectangle(
   }
   waterScore = Math.round(clamp(waterScore, 0, 100));
 
-  // 2) Radiation Shielding (25%) — lower mSv/day yields higher score
   const radScore = Math.round(clamp(((1.18 - meanRad) / (1.18 - 0.36)) * 88 + 10, 8, 98));
 
-  // 3) Thermal Mildness (25%) — daytime TES surface temp relative to human base thermal budget
   const refTempC = meanTemp ?? (-28 - Math.max(0, Math.abs(centerLatDeg) - 20) * 0.9);
   let thermalScore: number;
   if (refTempC >= -15) {
@@ -426,7 +407,6 @@ export function analyzeMarsSiteRectangle(
   }
   thermalScore = Math.round(clamp(thermalScore, 0, 100));
 
-  // 4) Terrain Flatness & Aerodynamic EDL Pressure Margin (20%)
   const slopePenalty = clamp(meanSlopeDeg * 4.5, 0, 52);
   const elevScore = clamp(((7000 - meanElev) / 15000) * 55 + 45, 18, 98);
   const terrainScore = Math.round(clamp(elevScore - slopePenalty, 10, 98));
@@ -482,10 +462,12 @@ export function analyzeMarsSiteRectangle(
 
   return {
     bounds,
+    vertices,
     centerLatDeg,
     centerLonDeg,
     widthKm,
     heightKm,
+    perimeterKm,
     areaKm2,
     sampleCount: totalSamples,
     elevation: {
@@ -532,4 +514,351 @@ export function analyzeMarsSiteRectangle(
       advisories,
     },
   };
+}
+
+export function unwrapPolygonRing(vertices: SitePolygonVertex[]): SitePolygonVertex[] {
+  if (vertices.length === 0) return [];
+  const unwrapped: SitePolygonVertex[] = [
+    {
+      latDeg: clamp(vertices[0].latDeg, -89.9, 89.9),
+      lonDeg: wrapLonDeg(vertices[0].lonDeg),
+    },
+  ];
+  for (let i = 1; i < vertices.length; i++) {
+    const prevLon = unwrapped[i - 1].lonDeg;
+    const delta = wrapLonDeg(vertices[i].lonDeg - prevLon);
+    unwrapped.push({
+      latDeg: clamp(vertices[i].latDeg, -89.9, 89.9),
+      lonDeg: prevLon + delta,
+    });
+  }
+  return unwrapped;
+}
+
+function isPointInUnwrappedPolygon(
+  lonDeg: number,
+  latDeg: number,
+  ring: SitePolygonVertex[]
+): boolean {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const xi = ring[i].lonDeg;
+    const yi = ring[i].latDeg;
+    const xj = ring[j].lonDeg;
+    const yj = ring[j].latDeg;
+    const intersects =
+      yi > latDeg !== yj > latDeg &&
+      lonDeg < ((xj - xi) * (latDeg - yi)) / (yj - yi + 1e-12) + xi;
+    if (intersects) inside = !inside;
+  }
+  return inside;
+}
+
+export function computePolygonMetricsKm(vertices: SitePolygonVertex[]): {
+  bounds: SiteBounds;
+  unwrapped: SitePolygonVertex[];
+  widthKm: number;
+  heightKm: number;
+  perimeterKm: number;
+  areaKm2: number;
+  centerLatDeg: number;
+  centerLonDeg: number;
+} {
+  const unwrapped = unwrapPolygonRing(vertices);
+  if (unwrapped.length < 3) {
+    const pt = unwrapped[0] ?? { latDeg: 0, lonDeg: 0 };
+    return {
+      bounds: {
+        southLat: pt.latDeg,
+        northLat: pt.latDeg,
+        westLon: pt.lonDeg,
+        eastLon: pt.lonDeg,
+      },
+      unwrapped,
+      widthKm: 0,
+      heightKm: 0,
+      perimeterKm: 0,
+      areaKm2: 0,
+      centerLatDeg: pt.latDeg,
+      centerLonDeg: wrapLonDeg(pt.lonDeg),
+    };
+  }
+
+  let minLat = Infinity;
+  let maxLat = -Infinity;
+  let minLon = Infinity;
+  let maxLon = -Infinity;
+  let sumLat = 0;
+  let sumLon = 0;
+
+  for (const v of unwrapped) {
+    if (v.latDeg < minLat) minLat = v.latDeg;
+    if (v.latDeg > maxLat) maxLat = v.latDeg;
+    if (v.lonDeg < minLon) minLon = v.lonDeg;
+    if (v.lonDeg > maxLon) maxLon = v.lonDeg;
+    sumLat += v.latDeg;
+    sumLon += v.lonDeg;
+  }
+
+  const rEqKm = MARS_CONSTANTS.EQUATORIAL_RADIUS / 1000;
+  const rPolKm = MARS_CONSTANTS.POLAR_RADIUS / 1000;
+  const rMeanKm = Math.cbrt(rEqKm * rEqKm * rPolKm);
+
+  const midLatRad = (((minLat + maxLat) * 0.5) * Math.PI) / 180;
+  const heightKm = rMeanKm * (((maxLat - minLat) * Math.PI) / 180);
+  const widthKm = rEqKm * Math.cos(midLatRad) * (((maxLon - minLon) * Math.PI) / 180);
+
+  // Spherical polygon area & perimeter
+  let areaSum = 0;
+  let perimeterKm = 0;
+  for (let i = 0; i < unwrapped.length; i++) {
+    const p0 = unwrapped[i];
+    const p1 = unwrapped[(i + 1) % unwrapped.length];
+    const lat0 = (p0.latDeg * Math.PI) / 180;
+    const lat1 = (p1.latDeg * Math.PI) / 180;
+    const lon0 = (p0.lonDeg * Math.PI) / 180;
+    const lon1 = (p1.lonDeg * Math.PI) / 180;
+    areaSum += (lon1 - lon0) * (2 + Math.sin(lat0) + Math.sin(lat1));
+
+    const dLat = lat1 - lat0;
+    const dLon = lon1 - lon0;
+    const sinHalfLat = Math.sin(dLat * 0.5);
+    const sinHalfLon = Math.sin(dLon * 0.5);
+    const h =
+      sinHalfLat * sinHalfLat +
+      Math.cos(lat0) * Math.cos(lat1) * sinHalfLon * sinHalfLon;
+    perimeterKm += 2 * rMeanKm * Math.asin(Math.min(1, Math.sqrt(Math.max(0, h))));
+  }
+
+  const areaKm2 = Math.abs(areaSum * 0.5) * rMeanKm * rMeanKm;
+
+  return {
+    bounds: {
+      southLat: minLat,
+      northLat: maxLat,
+      westLon: wrapLonDeg(minLon),
+      eastLon: wrapLonDeg(maxLon),
+    },
+    unwrapped,
+    widthKm,
+    heightKm,
+    perimeterKm,
+    areaKm2,
+    centerLatDeg: sumLat / unwrapped.length,
+    centerLonDeg: wrapLonDeg(sumLon / unwrapped.length),
+  };
+}
+
+/**
+ * Evaluates a freehand-drawn Martian polygon site across Elevation, Radiation,
+ * Temperature (NASA TES), and Water Availability (NASA Odyssey GRS/NS).
+ */
+export function analyzeMarsSitePolygon(
+  vertices: SitePolygonVertex[],
+  solarLongitudeLs = 0
+): SiteAnalysisResult {
+  const {
+    bounds,
+    unwrapped,
+    widthKm,
+    heightKm,
+    perimeterKm,
+    areaKm2,
+    centerLatDeg: vertexCenterLat,
+    centerLonDeg: vertexCenterLon,
+  } = computePolygonMetricsKm(vertices);
+
+  let minLat = Infinity;
+  let maxLat = -Infinity;
+  let minLon = Infinity;
+  let maxLon = -Infinity;
+  for (const v of unwrapped) {
+    if (v.latDeg < minLat) minLat = v.latDeg;
+    if (v.latDeg > maxLat) maxLat = v.latDeg;
+    if (v.lonDeg < minLon) minLon = v.lonDeg;
+    if (v.lonDeg > maxLon) maxLon = v.lonDeg;
+  }
+
+  const GRID_N = 20;
+  const dLatDeg = Math.max(1e-6, maxLat - minLat);
+  const dLonDeg = Math.max(1e-6, maxLon - minLon);
+
+  const sampleCoords: Array<{ latDeg: number; lonDeg: number }> = [];
+  const sampleElevs: number[] = [];
+  const insideGrid: Array<Array<number | null>> = [];
+  let insideLatSum = 0;
+  let insideLonSum = 0;
+
+  for (let iy = 0; iy < GRID_N; iy++) {
+    const lat = minLat + ((iy + 0.5) / GRID_N) * dLatDeg;
+    const row: Array<number | null> = [];
+    for (let ix = 0; ix < GRID_N; ix++) {
+      const lonU = minLon + ((ix + 0.5) / GRID_N) * dLonDeg;
+      if (isPointInUnwrappedPolygon(lonU, lat, unwrapped)) {
+        const lon = wrapLonDeg(lonU);
+        const elev = sampleElevationAt(lon, lat);
+        row.push(elev);
+        sampleCoords.push({ latDeg: lat, lonDeg: lon });
+        sampleElevs.push(elev);
+        insideLatSum += lat;
+        insideLonSum += lonU;
+      } else {
+        row.push(null);
+      }
+    }
+    insideGrid.push(row);
+  }
+
+  const stepXKm = Math.max(0.02, widthKm / GRID_N);
+  const stepYKm = Math.max(0.02, heightKm / GRID_N);
+  let slopeSumDeg = 0;
+  let slopeCount = 0;
+  for (let iy = 0; iy < GRID_N; iy++) {
+    for (let ix = 0; ix < GRID_N; ix++) {
+      const e0 = insideGrid[iy][ix];
+      if (e0 === null) continue;
+      if (ix + 1 < GRID_N && insideGrid[iy][ix + 1] !== null) {
+        const dzKm = Math.abs((insideGrid[iy][ix + 1] as number) - e0) / 1000;
+        slopeSumDeg += (Math.atan2(dzKm, stepXKm) * 180) / Math.PI;
+        slopeCount++;
+      }
+      if (iy + 1 < GRID_N && insideGrid[iy + 1][ix] !== null) {
+        const dzKm = Math.abs((insideGrid[iy + 1][ix] as number) - e0) / 1000;
+        slopeSumDeg += (Math.atan2(dzKm, stepYKm) * 180) / Math.PI;
+        slopeCount++;
+      }
+    }
+  }
+
+  // Fallback for very slender shapes with sparse interior grid hits: sample boundary + centroid
+  if (sampleCoords.length < 8 && unwrapped.length >= 3) {
+    const step = Math.max(1, Math.floor(unwrapped.length / 24));
+    for (let i = 0; i < unwrapped.length; i += step) {
+      const lat = unwrapped[i].latDeg;
+      const lon = wrapLonDeg(unwrapped[i].lonDeg);
+      sampleCoords.push({ latDeg: lat, lonDeg: lon });
+      sampleElevs.push(sampleElevationAt(lon, lat));
+    }
+    sampleCoords.push({ latDeg: vertexCenterLat, lonDeg: vertexCenterLon });
+    sampleElevs.push(sampleElevationAt(vertexCenterLon, vertexCenterLat));
+  }
+
+  if (slopeCount < 4) {
+    const rMeanKm =
+      Math.cbrt(
+        MARS_CONSTANTS.EQUATORIAL_RADIUS *
+          MARS_CONSTANTS.EQUATORIAL_RADIUS *
+          MARS_CONSTANTS.POLAR_RADIUS
+      ) / 1000;
+    const probeKm = Math.max(0.05, Math.min(2.0, Math.sqrt(Math.max(0.01, areaKm2)) * 0.12));
+    const dLatProbe = (probeKm / rMeanKm) * (180 / Math.PI);
+    for (let i = 0; i < sampleCoords.length; i += Math.max(1, Math.floor(sampleCoords.length / 16))) {
+      const { latDeg, lonDeg } = sampleCoords[i];
+      const cosLat = Math.max(0.15, Math.cos((latDeg * Math.PI) / 180));
+      const dLonProbe = dLatProbe / cosLat;
+      const eC = sampleElevs[i];
+      const eN = sampleElevationAt(lonDeg, clamp(latDeg + dLatProbe, -89.9, 89.9));
+      const eE = sampleElevationAt(wrapLonDeg(lonDeg + dLonProbe), latDeg);
+      slopeSumDeg += (Math.atan2(Math.abs(eN - eC) / 1000, probeKm) * 180) / Math.PI;
+      slopeSumDeg += (Math.atan2(Math.abs(eE - eC) / 1000, probeKm) * 180) / Math.PI;
+      slopeCount += 2;
+    }
+  }
+
+  const centerLatDeg =
+    sampleCoords.length > 0 && insideLatSum !== 0
+      ? insideLatSum / (sampleCoords.length - (insideGrid.flat().filter((v) => v !== null).length < 8 ? sampleCoords.length - insideGrid.flat().filter((v) => v !== null).length : 0))
+      : vertexCenterLat;
+  const insideCount = insideGrid.flat().filter((v) => v !== null).length;
+  const resolvedCenterLat = insideCount >= 3 ? insideLatSum / insideCount : vertexCenterLat;
+  const resolvedCenterLon =
+    insideCount >= 3 ? wrapLonDeg(insideLonSum / insideCount) : vertexCenterLon;
+  void centerLatDeg;
+
+  return summarizeSiteMetrics({
+    bounds,
+    vertices: unwrapped.map((v) => ({ latDeg: v.latDeg, lonDeg: wrapLonDeg(v.lonDeg) })),
+    centerLatDeg: resolvedCenterLat,
+    centerLonDeg: resolvedCenterLon,
+    widthKm,
+    heightKm,
+    perimeterKm,
+    areaKm2,
+    sampleElevs,
+    sampleCoords,
+    slopeSumDeg,
+    slopeCount,
+    solarLongitudeLs,
+  });
+}
+
+/**
+ * Evaluates a selected rectangular Martian site across Elevation, Radiation,
+ * Temperature (NASA TES), and Water Availability (NASA Odyssey GRS/NS),
+ * returning summary statistics and a 0-100 Habitability Condition Score.
+ */
+export function analyzeMarsSiteRectangle(
+  bounds: SiteBounds,
+  solarLongitudeLs = 0
+): SiteAnalysisResult {
+  const { widthKm, heightKm, areaKm2 } = computeRectangleDimensionsKm(bounds);
+  const dLonDeg = getPositiveLonSpanDeg(bounds.westLon, bounds.eastLon);
+  const dLatDeg = Math.abs(bounds.northLat - bounds.southLat);
+
+  const centerLatDeg = (bounds.southLat + bounds.northLat) * 0.5;
+  const centerLonDeg = wrapLonDeg(bounds.westLon + dLonDeg * 0.5);
+
+  const GRID_N = 12;
+  const elevGrid: number[][] = [];
+  const sampleCoords: Array<{ latDeg: number; lonDeg: number }> = [];
+  const sampleElevs: number[] = [];
+
+  for (let iy = 0; iy < GRID_N; iy++) {
+    const v = (iy + 0.5) / GRID_N;
+    const lat = bounds.southLat + v * dLatDeg;
+    const rowElev: number[] = [];
+
+    for (let ix = 0; ix < GRID_N; ix++) {
+      const u = (ix + 0.5) / GRID_N;
+      const lon = wrapLonDeg(bounds.westLon + u * dLonDeg);
+      const elev = sampleElevationAt(lon, lat);
+      rowElev.push(elev);
+      sampleCoords.push({ latDeg: lat, lonDeg: lon });
+      sampleElevs.push(elev);
+    }
+    elevGrid.push(rowElev);
+  }
+
+  const stepXKm = Math.max(0.02, widthKm / GRID_N);
+  const stepYKm = Math.max(0.02, heightKm / GRID_N);
+  let slopeSumDeg = 0;
+  let slopeCount = 0;
+  for (let iy = 0; iy < GRID_N; iy++) {
+    for (let ix = 0; ix < GRID_N; ix++) {
+      if (ix + 1 < GRID_N) {
+        const dzKm = Math.abs(elevGrid[iy][ix + 1] - elevGrid[iy][ix]) / 1000;
+        slopeSumDeg += (Math.atan2(dzKm, stepXKm) * 180) / Math.PI;
+        slopeCount++;
+      }
+      if (iy + 1 < GRID_N) {
+        const dzKm = Math.abs(elevGrid[iy + 1][ix] - elevGrid[iy][ix]) / 1000;
+        slopeSumDeg += (Math.atan2(dzKm, stepYKm) * 180) / Math.PI;
+        slopeCount++;
+      }
+    }
+  }
+
+  return summarizeSiteMetrics({
+    bounds,
+    centerLatDeg,
+    centerLonDeg,
+    widthKm,
+    heightKm,
+    areaKm2,
+    sampleElevs,
+    sampleCoords,
+    slopeSumDeg,
+    slopeCount,
+    solarLongitudeLs,
+  });
 }

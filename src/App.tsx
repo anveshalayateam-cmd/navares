@@ -16,7 +16,7 @@ import {
 } from './components/MeasureToolOverlay';
 import { NavControls } from './components/NavControls';
 import { SearchBar } from './components/SearchBar';
-import { LiveSiteRectPreview, SiteAnalysisOverlay } from './components/SiteAnalysisOverlay';
+import { LiveSiteDrawPreview, SiteAnalysisOverlay } from './components/SiteAnalysisOverlay';
 import { SurvivalRouteOverlay } from './components/SurvivalRouteOverlay';
 import { TargetInfoCard } from './components/TargetInfoCard';
 import { MarsTarget, TelemetryMode } from './data/marsData';
@@ -27,8 +27,8 @@ import {
   getMarsSurfaceTempC,
 } from './utils/marsOverlayMaps';
 import {
-  SiteBounds,
-  analyzeMarsSiteRectangle,
+  SitePolygonVertex,
+  analyzeMarsSitePolygon,
   sampleMarsWaterAvailability,
 } from './utils/marsWaterModel';
 import {
@@ -96,15 +96,18 @@ export default function App() {
   const [pendingDropPoint, setPendingDropPoint] = useState<DroppedPinCandidate | null>(null);
   const [customPins, setCustomPins] = useState<MarsTarget[]>([]);
 
-  // Rectangular Site Habitability Analysis state
+  // Pencil Freehand Site Habitability Analysis state
   const [siteAnalysisMode, setSiteAnalysisMode] = useState<boolean>(false);
-  const [siteHasCornerA, setSiteHasCornerA] = useState<boolean>(false);
-  const [siteLivePreview, setSiteLivePreview] = useState<LiveSiteRectPreview | null>(null);
-  const [siteBounds, setSiteBounds] = useState<SiteBounds | null>(null);
+  const [siteIsDrawing, setSiteIsDrawing] = useState<boolean>(false);
+  const [siteLivePreview, setSiteLivePreview] = useState<LiveSiteDrawPreview | null>(null);
+  const [sitePolygon, setSitePolygon] = useState<SitePolygonVertex[] | null>(null);
 
   const siteAnalysisResult = useMemo(
-    () => (siteBounds ? analyzeMarsSiteRectangle(siteBounds, temperatureLs) : null),
-    [siteBounds, temperatureLs]
+    () =>
+      sitePolygon && sitePolygon.length >= 3
+        ? analyzeMarsSitePolygon(sitePolygon, temperatureLs)
+        : null,
+    [sitePolygon, temperatureLs]
   );
 
   // Fetch NASA MSL REMS surface weather when Weather overlay is toggled ON
@@ -187,7 +190,8 @@ export default function App() {
         setDropPinMode(false);
         setPendingDropPoint(null);
         setSiteAnalysisMode(false);
-        setSiteBounds(null);
+        setSiteIsDrawing(false);
+        setSitePolygon(null);
       }
       return next;
     });
@@ -203,7 +207,8 @@ export default function App() {
         setDropPinMode(false);
         setPendingDropPoint(null);
         setSiteAnalysisMode(false);
-        setSiteBounds(null);
+        setSiteIsDrawing(false);
+        setSitePolygon(null);
       }
       return next;
     });
@@ -220,7 +225,8 @@ export default function App() {
         setMeasureMode(false);
         setRouteMode(false);
         setSiteAnalysisMode(false);
-        setSiteBounds(null);
+        setSiteIsDrawing(false);
+        setSitePolygon(null);
       }
       return next;
     });
@@ -237,13 +243,14 @@ export default function App() {
         setRouteMode(false);
         setDropPinMode(false);
         setPendingDropPoint(null);
-        setSiteBounds(null);
-      } else if (!siteBounds) {
+        setSiteIsDrawing(false);
+        setSitePolygon(null);
+      } else if (!sitePolygon) {
         globeRef.current?.clearSiteSelection();
       }
       return next;
     });
-  }, [siteBounds]);
+  }, [sitePolygon]);
 
   const handleConfirmCustomPin = useCallback(
     (name: string) => {
@@ -279,7 +286,7 @@ export default function App() {
         photoUrl: '',
         photoCaption: `Procedural Martian Surface View · ${name}`,
         survivalNotes: {
-          slopeSteepness: 'Inspect local contour relief with Measure / Analyse Site tools',
+          slopeSteepness: 'Inspect local contour relief with Measure / Pencil tools',
           dustRisk: 'Seasonal Martian airborne dust varies with solar longitude (Ls)',
           radiationLevel: `${dose.toFixed(2)} mSv/day (~${Math.round(dose * 365.25)} mSv/yr)`,
           thermalRange: formatMarsSurfaceTempC(tesTemp),
@@ -303,13 +310,15 @@ export default function App() {
 
   const handleReselectSiteArea = useCallback(() => {
     globeRef.current?.clearSiteSelection();
-    setSiteBounds(null);
+    setSiteIsDrawing(false);
+    setSitePolygon(null);
     setSiteAnalysisMode(true);
   }, []);
 
   const handleCloseSiteAnalysis = useCallback(() => {
     globeRef.current?.clearSiteSelection();
-    setSiteBounds(null);
+    setSiteIsDrawing(false);
+    setSitePolygon(null);
     setSiteAnalysisMode(false);
   }, []);
 
@@ -340,9 +349,10 @@ export default function App() {
           setPendingDropPoint(null);
         } else if (dropPinMode) {
           setDropPinMode(false);
-        } else if (siteAnalysisMode || siteBounds) {
+        } else if (siteAnalysisMode || sitePolygon) {
           globeRef.current?.clearSiteSelection();
-          setSiteBounds(null);
+          setSiteIsDrawing(false);
+          setSitePolygon(null);
           setSiteAnalysisMode(false);
         } else if (measureMode) {
           globeRef.current?.clearMeasurement();
@@ -361,7 +371,7 @@ export default function App() {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [measureMode, routeMode, routeResult, dropPinMode, pendingDropPoint, siteAnalysisMode, siteBounds]);
+  }, [measureMode, routeMode, routeResult, dropPinMode, pendingDropPoint, siteAnalysisMode, sitePolygon]);
 
   return (
     <main className="relative h-screen w-screen overflow-hidden bg-black text-slate-100">
@@ -395,9 +405,9 @@ export default function App() {
         onRouteStartChange={setRouteStart}
         onRouteResultChange={setRouteResult}
         onDropPinPoint={setPendingDropPoint}
-        onSiteRectHasCornerAChange={setSiteHasCornerA}
-        onSiteRectLivePreviewChange={setSiteLivePreview}
-        onSiteRectComplete={setSiteBounds}
+        onSiteDrawingChange={setSiteIsDrawing}
+        onSiteDrawLivePreviewChange={setSiteLivePreview}
+        onSitePolygonComplete={setSitePolygon}
         onGlobeReady={setGlobeReady}
       />
 
@@ -425,10 +435,10 @@ export default function App() {
         }}
       />
 
-      {/* Rectangular Site Habitability Analysis Banner & Telemetry Card */}
+      {/* Pencil Freehand Site Habitability Analysis Banner & Telemetry Card */}
       <SiteAnalysisOverlay
         siteAnalysisMode={siteAnalysisMode}
-        hasFirstCorner={siteHasCornerA}
+        isDrawing={siteIsDrawing}
         livePreview={siteLivePreview}
         result={siteAnalysisResult}
         onReselectArea={handleReselectSiteArea}

@@ -3,18 +3,13 @@ import {
   sampleMarsRockMicroSample,
 } from './marsElevation';
 import {
-  fetchMdemTileWithBorders,
-  MDEM_NATIVE_MAX_LEVEL,
-  sampleStitchedMdemUv,
-} from './marsMdemTerrain';
-import {
   computeSurfaceRadiationDoseFromElev,
   doseToBlackGreenRgb,
   elevationToGrayscaleRgb,
   sampleTesTemperatureFast,
   tempToRainbowRgb,
 } from './marsOverlayMaps';
-import { sampleElevationAt } from './molaMegdr';
+import { loadMolaMegdrRaster, sampleElevationAt } from './molaMegdr';
 
 export type MarsProceduralLayerMode =
   | 'elevation'
@@ -176,20 +171,14 @@ export function createMarsProceduralImageryProvider({
       const lonSpan = eastDeg - westDeg;
       const latSpan = northDeg - southDeg;
       const data = scratch.imgData.data;
-      const elevationTileLevel = Math.min(level, MDEM_NATIVE_MAX_LEVEL);
-      const elevationTileScale = 1 << (level - elevationTileLevel);
-      const elevationTileX = Math.floor(x / elevationTileScale);
-      const elevationTileY = Math.floor(y / elevationTileScale);
-      // Elevation imagery must use the same authoritative blended MOLA/HRSC raster as
-      // the 3D terrain. Fetch this tile before drawing so the procedural fallback cannot
-      // be baked into a Cesium imagery tile while the DEM cache is still warming up.
-      const elevationTileSet = mode === 'elevation'
-        ? await fetchMdemTileWithBorders(
-            elevationTileLevel,
-            elevationTileX,
-            elevationTileY
-          )
-        : null;
+
+      if (mode === 'elevation' || mode === 'radiation') {
+        try {
+          await loadMolaMegdrRaster();
+        } catch {
+          // Proceed with safe fallback if raster load failed
+        }
+      }
 
       if (isRockDetail) {
         const centerLat = (northDeg + southDeg) * 0.5;
@@ -330,15 +319,7 @@ export function createMarsProceduralImageryProvider({
             data[idx + 2] = b;
             data[idx + 3] = 255;
           } else {
-            const tileU =
-              ((x - elevationTileX * elevationTileScale) + (col + 0.5) / sampleSize) /
-              elevationTileScale;
-            const tileV =
-              ((y - elevationTileY * elevationTileScale) + (row + 0.5) / sampleSize) /
-              elevationTileScale;
-            const elevMeters = elevationTileSet
-              ? sampleStitchedMdemUv(elevationTileSet, tileU, tileV)
-              : sampleElevationAt(lonDeg, latDeg);
+            const elevMeters = sampleElevationAt(lonDeg, latDeg);
             const [r, g, b] = elevationToGrayscaleRgb(elevMeters);
             data[idx] = r;
             data[idx + 1] = g;

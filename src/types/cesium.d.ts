@@ -49,6 +49,8 @@ export interface CesiumViewer {
       fxaa: {
         enabled: boolean;
       };
+      add?: (stage: unknown) => unknown;
+      remove?: (stage: unknown) => boolean;
     };
     globe: {
       baseColor: unknown;
@@ -74,6 +76,7 @@ export interface CesiumViewer {
       atmosphereMieCoefficient?: unknown;
       atmosphereMieAnisotropy?: number;
       depthTestAgainstTerrain: boolean;
+      tilesLoaded?: boolean;
       getHeight?: (cartographic: unknown) => number | undefined;
       pick: (ray: unknown, scene: unknown) => unknown;
       material?: unknown;

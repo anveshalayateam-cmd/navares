@@ -51,7 +51,7 @@ const DATA_ATTRIBUTIONS = [
     description: (
       <>
         3D terrain elevations use the bundled single-channel 16-bit MOLA MEGDR raster (
-        <span className="font-mono-tabular text-slate-200">3840×1920</span>) derived from the
+        <span className="font-mono-tabular text-slate-200">5760×2880</span>) derived from the
         Mars Global Surveyor Mars Orbiter Laser Altimeter, decoded directly from the lossless PNG
         heightfield and paired with site-geology boulder/regolith micro-relief at close surface
         zoom. Magnetic anomaly overlays use NASA MGS data —{' '}

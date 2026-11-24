@@ -1,4 +1,4 @@
-import { BoxSelect, ChevronDown, ChevronUp, CloudSun, Grid3X3, MapPin } from 'lucide-react';
+import { ChevronDown, ChevronUp, CloudSun, Grid3X3, MapPin, Pencil } from 'lucide-react';
 import { useState } from 'react';
 import { MARS_TEMPERATURE_GRADIENT_CSS } from '../utils/marsOverlayMaps';
 
@@ -240,24 +240,24 @@ export function MapStyleBar({
           <button
             type="button"
             aria-pressed={siteAnalysisMode}
-            aria-label={siteAnalysisMode ? 'Analyse a Site: ON' : 'Analyse a Site'}
+            aria-label={siteAnalysisMode ? 'Pencil: ON' : 'Pencil'}
             onClick={onToggleSiteAnalysis}
             className={`group inline-flex h-10 shrink-0 cursor-pointer items-center justify-center rounded-full border px-3 text-xs font-medium whitespace-nowrap shadow-2xl backdrop-blur-md transition-all duration-200 hover:px-3.5 focus-visible:px-3.5 ${
               siteAnalysisMode
                 ? 'border-amber-300/50 bg-amber-500/20 text-amber-100 px-3.5'
                 : 'border-white/15 bg-[#0B0F17]/82 text-slate-300 hover:bg-[#0B0F17] hover:text-white'
             }`}
-            title="Analyse a rectangular Martian site for Radiation, Temperature, Elevation, Water & Habitability"
+            title="Draw any shape on Mars with Pencil to analyse Radiation, Temperature, Elevation, Water & Habitability"
           >
-            <BoxSelect className={`h-4 w-4 shrink-0 ${siteAnalysisMode ? 'text-amber-300' : 'text-slate-400'}`} aria-hidden="true" />
+            <Pencil className={`h-4 w-4 shrink-0 ${siteAnalysisMode ? 'text-amber-300' : 'text-slate-400'}`} aria-hidden="true" />
             <span
               className={`overflow-hidden transition-all duration-200 ${
                 siteAnalysisMode
-                  ? 'ml-2 max-w-[8rem] opacity-100'
-                  : 'max-w-0 opacity-0 group-hover:ml-2 group-hover:max-w-[8rem] group-hover:opacity-100 group-focus-visible:ml-2 group-focus-visible:max-w-[8rem] group-focus-visible:opacity-100'
+                  ? 'ml-2 max-w-[6rem] opacity-100'
+                  : 'max-w-0 opacity-0 group-hover:ml-2 group-hover:max-w-[6rem] group-hover:opacity-100 group-focus-visible:ml-2 group-focus-visible:max-w-[6rem] group-focus-visible:opacity-100'
               }`}
             >
-              Analyse a Site
+              Pencil
             </span>
           </button>
         </div>
@@ -315,17 +315,17 @@ export function MapStyleBar({
           <button
             type="button"
             aria-pressed={siteAnalysisMode}
-            aria-label={siteAnalysisMode ? 'Analyse a Site: ON' : 'Analyse a Site'}
+            aria-label={siteAnalysisMode ? 'Pencil: ON' : 'Pencil'}
             onClick={onToggleSiteAnalysis}
             className={`inline-flex h-8 shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-full border px-2.5 text-[11px] font-medium whitespace-nowrap shadow-xl backdrop-blur-md transition-colors ${
               siteAnalysisMode
                 ? 'border-amber-300/50 bg-amber-500/20 text-amber-100'
                 : 'border-white/15 bg-[#0B0F17]/82 text-slate-300 hover:bg-[#0B0F17] hover:text-white'
             }`}
-            title="Analyse a rectangular Martian site for Radiation, Temperature, Elevation, Water & Habitability"
+            title="Draw any shape on Mars with Pencil to analyse Radiation, Temperature, Elevation, Water & Habitability"
           >
-            <BoxSelect className={`h-3.5 w-3.5 shrink-0 ${siteAnalysisMode ? 'text-amber-300' : 'text-slate-400'}`} aria-hidden="true" />
-            <span>Analyse</span>
+            <Pencil className={`h-3.5 w-3.5 shrink-0 ${siteAnalysisMode ? 'text-amber-300' : 'text-slate-400'}`} aria-hidden="true" />
+            <span>Pencil</span>
           </button>
         </div>
       </div>

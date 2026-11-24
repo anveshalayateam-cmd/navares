@@ -1,18 +1,18 @@
-import { BoxSelect, ChevronDown, ChevronUp, Droplets, Mountain, Radiation, RotateCcw, Thermometer, X } from 'lucide-react';
+import { ChevronDown, ChevronUp, Droplets, Mountain, Pencil, Radiation, RotateCcw, Thermometer, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { formatDistance, formatLatLon, formatSurfaceElevation } from '../utils/marsMath';
 import { SiteAnalysisResult } from '../utils/marsWaterModel';
 
-export interface LiveSiteRectPreview {
-  widthKm: number;
-  heightKm: number;
+export interface LiveSiteDrawPreview {
+  pointCount: number;
+  perimeterKm: number;
   areaKm2: number;
 }
 
 interface SiteAnalysisOverlayProps {
   siteAnalysisMode: boolean;
-  hasFirstCorner: boolean;
-  livePreview: LiveSiteRectPreview | null;
+  isDrawing: boolean;
+  livePreview: LiveSiteDrawPreview | null;
   result: SiteAnalysisResult | null;
   onReselectArea: () => void;
   onCloseAnalysis: () => void;
@@ -39,7 +39,7 @@ function formatTemp(val: number | null): string {
 
 export function SiteAnalysisOverlay({
   siteAnalysisMode,
-  hasFirstCorner,
+  isDrawing,
   livePreview,
   result,
   onReselectArea,
@@ -87,17 +87,17 @@ export function SiteAnalysisOverlay({
           className="pointer-events-auto flex shrink-0 flex-wrap items-center justify-between gap-2 rounded-2xl border border-amber-400/35 bg-[#0B0F17]/90 px-3 py-1.5 sm:px-3.5 sm:py-2 backdrop-blur-md shadow-2xl"
         >
           <div className="flex min-w-0 flex-1 items-center gap-2">
-            <BoxSelect className="h-3.5 w-3.5 shrink-0 text-amber-300" aria-hidden="true" />
+            <Pencil className="h-3.5 w-3.5 shrink-0 text-amber-300" aria-hidden="true" />
             <span className="text-[11px] sm:text-xs text-slate-100 leading-snug">
-              {result
-                ? 'Site analysis complete · Click corner on Mars to analyse another area'
-                : hasFirstCorner
-                  ? `Click opposite corner to finish rectangle${
-                      livePreview
-                        ? ` · ${formatDistance(livePreview.widthKm * 1000)} × ${formatDistance(livePreview.heightKm * 1000)}`
-                        : ''
-                    }`
-                  : 'Click first corner on Mars to select a rectangular site'}
+              {isDrawing
+                ? `Drawing shape · Release to analyse${
+                    livePreview && livePreview.pointCount >= 3
+                      ? ` · ${formatAreaKm2(livePreview.areaKm2)} · ${formatDistance(livePreview.perimeterKm * 1000)}`
+                      : ''
+                  }`
+                : result
+                  ? 'Site shape analysed · Drag on Mars to draw a new shape, or Exit to orbit'
+                  : 'Pencil active · Click and drag any shape on Mars to analyse'}
             </span>
           </div>
           <button
@@ -125,7 +125,7 @@ export function SiteAnalysisOverlay({
             }`}
           >
             <div className="flex items-start gap-2.5 min-w-0">
-              <BoxSelect className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" aria-hidden="true" />
+              <Pencil className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" aria-hidden="true" />
               <div className="min-w-0">
                 <h3 className="font-display text-sm font-bold text-white">
                   Site Habitability Analysis
@@ -166,11 +166,11 @@ export function SiteAnalysisOverlay({
               <button
                 type="button"
                 onClick={onReselectArea}
-                title="Select a new rectangular site"
+                title="Draw a new site shape with Pencil"
                 className="inline-flex items-center gap-1 rounded-full border border-white/15 bg-white/[0.06] px-2.5 py-1 text-[11px] font-medium text-slate-200 transition-colors hover:bg-white/15 hover:text-white cursor-pointer whitespace-nowrap"
               >
                 <RotateCcw className="h-3 w-3" aria-hidden="true" />
-                <span>New Area</span>
+                <span>Redraw</span>
               </button>
               <button
                 type="button"
@@ -340,7 +340,9 @@ export function SiteAnalysisOverlay({
                 <div className="font-mono-tabular text-[10px] text-slate-400">
                   Mean slope ~{result.elevation.meanSlopeDeg.toFixed(1)}° ·{' '}
                   {result.elevation.surfacePressureMbar.toFixed(1)} mbar ·{' '}
-                  {formatDistance(result.widthKm * 1000)} × {formatDistance(result.heightKm * 1000)}
+                  {result.perimeterKm !== undefined
+                    ? `Perim ${formatDistance(result.perimeterKm * 1000)}`
+                    : `${formatDistance(result.widthKm * 1000)} × ${formatDistance(result.heightKm * 1000)}`}
                 </div>
               </div>
             </div>
