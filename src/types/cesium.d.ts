@@ -8,6 +8,8 @@ export interface CesiumEntity {
   };
   billboard?: unknown;
   label?: unknown;
+  model?: unknown;
+  orientation?: unknown;
   polyline?: unknown;
   polygon?: unknown;
   ellipse?: unknown;
@@ -45,6 +47,8 @@ export interface CesiumViewer {
   };
   scene: {
     requestRenderMode: boolean;
+    msaaSamples?: number;
+    msaaSupported?: boolean;
     postProcessStages: {
       fxaa: {
         enabled: boolean;

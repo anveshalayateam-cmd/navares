@@ -1991,4 +1991,447 @@ export function formatTraverseTimes(meters: number): { roboticRover: string; eva
   };
 }
 
+export interface SpacecraftModelSpec {
+  uri: string;
+  scale: number;
+  minimumPixelSize: number;
+  maximumScale: number;
+  headingDeg?: number;
+  pitchDeg?: number;
+  rollDeg?: number;
+  heightOffsetMeters?: number;
+  centerLiftMultiplier?: number;
+}
 
+const SPACE_RADAR_MODELS_BASE =
+  'https://raw.githubusercontent.com/Sara-Managed-Projects/space-radar/main/site/models/';
+const NASA_EYES_MODELS_BASE = 'https://eyes.nasa.gov/assets/static/models/';
+
+const MODEL_URIS = {
+  // NASA Eyes on the Solar System (.gltf, CORS *)
+  MRO: `${NASA_EYES_MODELS_BASE}sc_mars_reconnaissance_orbiter/MRO.gltf`,
+  MAVEN: `${NASA_EYES_MODELS_BASE}sc_maven/Maven.gltf`,
+  ODYSSEY: `${NASA_EYES_MODELS_BASE}sc_mars_odyssey/mars_odyssey.gltf`,
+  MGS: `${NASA_EYES_MODELS_BASE}sc_mars_global_surveyor/mars_global_surveyor.gltf`,
+  MARS_EXPRESS: `${NASA_EYES_MODELS_BASE}sc_mars_express/mars_express.gltf`,
+  TGO: `${NASA_EYES_MODELS_BASE}sc_trace_gas_orbiter/TGO.gltf`,
+  MARCO_A: `${NASA_EYES_MODELS_BASE}sc_marco/model.gltf`,
+  STARLING: `${NASA_EYES_MODELS_BASE}sc_starling/starling.gltf`,
+  MER_STATIC: `${NASA_EYES_MODELS_BASE}sc_mars_exploration_rover/rover/mer_static.gltf`,
+  CURIOSITY_EYES: `${NASA_EYES_MODELS_BASE}sc_mars_science_laboratory/rover/curiosity_static.gltf`,
+
+  // Space Radar MIT-licensed upright, meter-calibrated spacecraft & rover models (.glb, CORS *)
+  SR_PERSEVERANCE: `${SPACE_RADAR_MODELS_BASE}perseverance.glb`,
+  SR_CURIOSITY: `${SPACE_RADAR_MODELS_BASE}curiosity.glb`,
+  SR_INGENUITY: `${SPACE_RADAR_MODELS_BASE}ingenuity.glb`,
+  SR_ZHURONG: `${SPACE_RADAR_MODELS_BASE}zhurong.glb`,
+  SR_PATHFINDER: `${SPACE_RADAR_MODELS_BASE}pathfinder.glb`,
+  SR_PHOENIX: `${SPACE_RADAR_MODELS_BASE}phoenix.glb`,
+  SR_INSIGHT: `${SPACE_RADAR_MODELS_BASE}insight.glb`,
+  SR_VIKING_LANDER: `${SPACE_RADAR_MODELS_BASE}viking-lander.glb`,
+  SR_MARS_3: `${SPACE_RADAR_MODELS_BASE}mars-3.glb`,
+  SR_LUNA_16: `${SPACE_RADAR_MODELS_BASE}luna-16.glb`,
+  SR_VENERA_9: `${SPACE_RADAR_MODELS_BASE}venera-9.glb`,
+  SR_YUTU: `${SPACE_RADAR_MODELS_BASE}yutu.glb`,
+  SR_SLIM: `${SPACE_RADAR_MODELS_BASE}slim.glb`,
+  SR_BLUE_GHOST: `${SPACE_RADAR_MODELS_BASE}blue-ghost.glb`,
+  SR_SURVEYOR_3: `${SPACE_RADAR_MODELS_BASE}surveyor-3.glb`,
+  SR_SURVEYOR: `${SPACE_RADAR_MODELS_BASE}surveyor.glb`,
+  SR_CHANGE_5: `${SPACE_RADAR_MODELS_BASE}change-5.glb`,
+  SR_CHANGE_4: `${SPACE_RADAR_MODELS_BASE}change-4.glb`,
+  SR_ODYSSEUS: `${SPACE_RADAR_MODELS_BASE}odysseus.glb`,
+  SR_VIKRAM: `${SPACE_RADAR_MODELS_BASE}vikram.glb`,
+  SR_LUNAR_MODULE: `${SPACE_RADAR_MODELS_BASE}lunar-module.glb`,
+  SR_LUNOKHOD_1: `${SPACE_RADAR_MODELS_BASE}lunokhod-1.glb`,
+  SR_LUNOKHOD_2: `${SPACE_RADAR_MODELS_BASE}lunokhod-2.glb`,
+
+  SR_HOPE: `${SPACE_RADAR_MODELS_BASE}hope.glb`,
+  SR_ROSETTA: `${SPACE_RADAR_MODELS_BASE}rosetta.glb`,
+  SR_BUS_I2K: `${SPACE_RADAR_MODELS_BASE}bus-i-2k.glb`,
+  SR_CASSINI: `${SPACE_RADAR_MODELS_BASE}cassini.glb`,
+  SR_EUROPA_CLIPPER: `${SPACE_RADAR_MODELS_BASE}europa-clipper.glb`,
+  SR_MARINER_2: `${SPACE_RADAR_MODELS_BASE}mariner-2.glb`,
+  SR_LANDSAT: `${SPACE_RADAR_MODELS_BASE}landsat.glb`,
+  SR_OCO2: `${SPACE_RADAR_MODELS_BASE}oco2.glb`,
+  SR_THEMIS: `${SPACE_RADAR_MODELS_BASE}themis.glb`,
+  SR_DAWN: `${SPACE_RADAR_MODELS_BASE}dawn.glb`,
+  SR_HERA: `${SPACE_RADAR_MODELS_BASE}hera.glb`,
+  SR_CUBESAT_6U_WINGS: `${SPACE_RADAR_MODELS_BASE}cubesat-6u-wings.glb`,
+  SR_HAYABUSA2: `${SPACE_RADAR_MODELS_BASE}hayabusa2.glb`,
+  SR_BEPICOLOMBO: `${SPACE_RADAR_MODELS_BASE}bepicolombo.glb`,
+  SR_NISAR: `${SPACE_RADAR_MODELS_BASE}nisar.glb`,
+  SR_TDRS: `${SPACE_RADAR_MODELS_BASE}tdrs.glb`,
+  SR_GPS_III: `${SPACE_RADAR_MODELS_BASE}gps-iii.glb`,
+} as const;
+
+export function getSatelliteModelSpec(satelliteId: string): SpacecraftModelSpec {
+  switch (satelliteId) {
+    case 'mro':
+      return { uri: MODEL_URIS.MRO, scale: 1.0, minimumPixelSize: 96, maximumScale: 1600 };
+    case 'maven':
+      return { uri: MODEL_URIS.MAVEN, scale: 0.9, minimumPixelSize: 96, maximumScale: 1400 };
+    case 'odyssey':
+      return { uri: MODEL_URIS.ODYSSEY, scale: 1.1, minimumPixelSize: 96, maximumScale: 1600 };
+    case 'mgs':
+      return { uri: MODEL_URIS.MGS, scale: 1.1, minimumPixelSize: 96, maximumScale: 1600 };
+    case 'mars-express':
+      return { uri: MODEL_URIS.MARS_EXPRESS, scale: 0.35, minimumPixelSize: 96, maximumScale: 600 };
+    case 'tgo':
+      return { uri: MODEL_URIS.TGO, scale: 0.85, minimumPixelSize: 96, maximumScale: 1400 };
+    case 'hope':
+      return { uri: MODEL_URIS.SR_HOPE, scale: 1.15, minimumPixelSize: 96, maximumScale: 1800 };
+    case 'tianwen-1':
+      return { uri: MODEL_URIS.SR_ROSETTA, scale: 0.48, minimumPixelSize: 96, maximumScale: 900 };
+    case 'mangalyaan':
+      return { uri: MODEL_URIS.SR_BUS_I2K, scale: 1.1, minimumPixelSize: 96, maximumScale: 1600 };
+    case 'viking-1-orbiter':
+      return { uri: MODEL_URIS.SR_CASSINI, scale: 0.72, minimumPixelSize: 96, maximumScale: 1200 };
+    case 'viking-2-orbiter':
+      return { uri: MODEL_URIS.SR_EUROPA_CLIPPER, scale: 0.48, minimumPixelSize: 96, maximumScale: 900 };
+    case 'mariner-9':
+      return { uri: MODEL_URIS.SR_MARINER_2, scale: 1.6, minimumPixelSize: 96, maximumScale: 2400 };
+    case 'phobos-2':
+      return { uri: MODEL_URIS.SR_VENERA_9, scale: 3.2, minimumPixelSize: 96, maximumScale: 4200 };
+    case 'mars-observer':
+      return { uri: MODEL_URIS.SR_LANDSAT, scale: 6.5, minimumPixelSize: 96, maximumScale: 8000 };
+    case 'mars-climate-orbiter':
+      return { uri: MODEL_URIS.SR_OCO2, scale: 0.35, minimumPixelSize: 96, maximumScale: 600 };
+    case 'nozomi':
+      return { uri: MODEL_URIS.SR_THEMIS, scale: 2.2, minimumPixelSize: 96, maximumScale: 3000 };
+    case 'escapade-blue':
+      return { uri: MODEL_URIS.SR_DAWN, scale: 0.55, minimumPixelSize: 96, maximumScale: 1000 };
+    case 'escapade-gold':
+      return { uri: MODEL_URIS.SR_HERA, scale: 0.9, minimumPixelSize: 96, maximumScale: 1500 };
+    case 'marco-a':
+      return { uri: MODEL_URIS.MARCO_A, scale: 5.0, minimumPixelSize: 88, maximumScale: 6500 };
+    case 'marco-b':
+      return { uri: MODEL_URIS.SR_CUBESAT_6U_WINGS, scale: 5.5, minimumPixelSize: 88, maximumScale: 6800 };
+    case 'mmx-orbiter':
+      return { uri: MODEL_URIS.SR_HAYABUSA2, scale: 1.6, minimumPixelSize: 96, maximumScale: 2400 };
+    case 'msr-ero':
+      return { uri: MODEL_URIS.SR_BEPICOLOMBO, scale: 0.5, minimumPixelSize: 96, maximumScale: 900 };
+    case 'imager-i-map':
+      return { uri: MODEL_URIS.SR_NISAR, scale: 0.85, minimumPixelSize: 96, maximumScale: 1400 };
+    case 'mars-relay-eq1':
+      return { uri: MODEL_URIS.SR_TDRS, scale: 9.0, minimumPixelSize: 96, maximumScale: 9500 };
+    case 'mars-relay-polar':
+      return { uri: MODEL_URIS.SR_GPS_III, scale: 0.8, minimumPixelSize: 96, maximumScale: 1400 };
+    default:
+      return { uri: MODEL_URIS.STARLING, scale: 4.0, minimumPixelSize: 92, maximumScale: 5200 };
+  }
+}
+
+export function getRoverModelSpec(roverId: string): SpacecraftModelSpec {
+  switch (roverId) {
+    case 'perseverance':
+      return {
+        uri: MODEL_URIS.SR_PERSEVERANCE,
+        scale: 1.0,
+        minimumPixelSize: 88,
+        maximumScale: 900,
+        headingDeg: 25,
+        heightOffsetMeters: 0.05,
+        centerLiftMultiplier: 0.0,
+      };
+    case 'perseverance-neretva':
+      return {
+        uri: MODEL_URIS.SR_PERSEVERANCE,
+        scale: 1.0,
+        minimumPixelSize: 88,
+        maximumScale: 900,
+        headingDeg: 135,
+        heightOffsetMeters: 0.05,
+        centerLiftMultiplier: 0.0,
+      };
+    case 'curiosity':
+      return {
+        uri: MODEL_URIS.SR_CURIOSITY,
+        scale: 1.0,
+        minimumPixelSize: 88,
+        maximumScale: 900,
+        headingDeg: -20,
+        heightOffsetMeters: 0.05,
+        centerLiftMultiplier: 0.0,
+      };
+    case 'msl-mount-sharp':
+      return {
+        uri: MODEL_URIS.CURIOSITY_EYES,
+        scale: 1.0,
+        minimumPixelSize: 88,
+        maximumScale: 900,
+        headingDeg: -45,
+        heightOffsetMeters: 0.28,
+        centerLiftMultiplier: 0.0,
+      };
+    case 'ingenuity':
+      return {
+        uri: MODEL_URIS.SR_INGENUITY,
+        scale: 1.6,
+        minimumPixelSize: 80,
+        maximumScale: 1400,
+        headingDeg: 15,
+        heightOffsetMeters: 0.08,
+        centerLiftMultiplier: 0.0,
+      };
+    case 'zhurong':
+      return {
+        uri: MODEL_URIS.SR_ZHURONG,
+        scale: 1.0,
+        minimumPixelSize: 88,
+        maximumScale: 900,
+        headingDeg: 35,
+        heightOffsetMeters: 0.05,
+        centerLiftMultiplier: 0.0,
+      };
+    case 'opportunity':
+      return {
+        uri: MODEL_URIS.MER_STATIC,
+        scale: 1.15,
+        minimumPixelSize: 84,
+        maximumScale: 1000,
+        headingDeg: 25,
+        heightOffsetMeters: 0.05,
+        centerLiftMultiplier: 0.0,
+      };
+    case 'opportunity-victoria':
+      return {
+        uri: MODEL_URIS.MER_STATIC,
+        scale: 1.15,
+        minimumPixelSize: 84,
+        maximumScale: 1000,
+        headingDeg: 115,
+        heightOffsetMeters: 0.05,
+        centerLiftMultiplier: 0.0,
+      };
+    case 'spirit':
+      return {
+        uri: MODEL_URIS.MER_STATIC,
+        scale: 1.15,
+        minimumPixelSize: 84,
+        maximumScale: 1000,
+        headingDeg: -65,
+        heightOffsetMeters: 0.05,
+        centerLiftMultiplier: 0.0,
+      };
+    case 'spirit-homeplate':
+      return {
+        uri: MODEL_URIS.MER_STATIC,
+        scale: 1.15,
+        minimumPixelSize: 84,
+        maximumScale: 1000,
+        headingDeg: 160,
+        heightOffsetMeters: 0.05,
+        centerLiftMultiplier: 0.0,
+      };
+    case 'insight':
+      return {
+        uri: MODEL_URIS.SR_INSIGHT,
+        scale: 0.85,
+        minimumPixelSize: 88,
+        maximumScale: 800,
+        headingDeg: 10,
+        heightOffsetMeters: 0.56,
+        centerLiftMultiplier: 0.14,
+      };
+    case 'phoenix':
+      return {
+        uri: MODEL_URIS.SR_PHOENIX,
+        scale: 0.9,
+        minimumPixelSize: 88,
+        maximumScale: 850,
+        headingDeg: -15,
+        heightOffsetMeters: 0.05,
+        centerLiftMultiplier: 0.0,
+      };
+    case 'viking-1':
+      return {
+        uri: MODEL_URIS.SR_VIKING_LANDER,
+        scale: 0.25,
+        minimumPixelSize: 88,
+        maximumScale: 280,
+        headingDeg: 20,
+        heightOffsetMeters: 0.05,
+        centerLiftMultiplier: 0.0,
+      };
+    case 'viking-2':
+      return {
+        uri: MODEL_URIS.SR_VIKING_LANDER,
+        scale: 0.25,
+        minimumPixelSize: 88,
+        maximumScale: 280,
+        headingDeg: 145,
+        heightOffsetMeters: 0.05,
+        centerLiftMultiplier: 0.0,
+      };
+    case 'pathfinder':
+      return {
+        uri: MODEL_URIS.SR_PATHFINDER,
+        scale: 0.95,
+        minimumPixelSize: 88,
+        maximumScale: 880,
+        headingDeg: 30,
+        heightOffsetMeters: 0.05,
+        centerLiftMultiplier: 0.0,
+      };
+    case 'mars-3':
+      return {
+        uri: MODEL_URIS.SR_MARS_3,
+        scale: 1.1,
+        minimumPixelSize: 86,
+        maximumScale: 1000,
+        headingDeg: 0,
+        heightOffsetMeters: 0.05,
+        centerLiftMultiplier: 0.0,
+      };
+    case 'mars-2':
+      return {
+        uri: MODEL_URIS.SR_LUNA_16,
+        scale: 1.0,
+        minimumPixelSize: 86,
+        maximumScale: 950,
+        headingDeg: 40,
+        heightOffsetMeters: 0.05,
+        centerLiftMultiplier: 0.0,
+      };
+    case 'mars-6':
+      return {
+        uri: MODEL_URIS.SR_VENERA_9,
+        scale: 1.05,
+        minimumPixelSize: 86,
+        maximumScale: 950,
+        headingDeg: -30,
+        heightOffsetMeters: 0.05,
+        centerLiftMultiplier: 0.0,
+      };
+    case 'rosalind-franklin':
+      return {
+        uri: MODEL_URIS.SR_YUTU,
+        scale: 1.2,
+        minimumPixelSize: 86,
+        maximumScale: 1100,
+        headingDeg: 25,
+        heightOffsetMeters: 0.05,
+        centerLiftMultiplier: 0.0,
+      };
+    case 'beagle-2':
+      return {
+        uri: MODEL_URIS.SR_SLIM,
+        scale: 0.8,
+        minimumPixelSize: 84,
+        maximumScale: 800,
+        headingDeg: 15,
+        heightOffsetMeters: 0.05,
+        centerLiftMultiplier: 0.0,
+      };
+    case 'schiaparelli':
+      return {
+        uri: MODEL_URIS.SR_BLUE_GHOST,
+        scale: 0.85,
+        minimumPixelSize: 86,
+        maximumScale: 850,
+        headingDeg: 0,
+        heightOffsetMeters: 0.05,
+        centerLiftMultiplier: 0.0,
+      };
+    case 'mars-polar-lander':
+      return {
+        uri: MODEL_URIS.SR_SURVEYOR_3,
+        scale: 0.9,
+        minimumPixelSize: 86,
+        maximumScale: 880,
+        headingDeg: -25,
+        heightOffsetMeters: 0.05,
+        centerLiftMultiplier: 0.0,
+      };
+    case 'tianwen-3-site':
+      return {
+        uri: MODEL_URIS.SR_CHANGE_5,
+        scale: 0.72,
+        minimumPixelSize: 88,
+        maximumScale: 720,
+        headingDeg: 15,
+        heightOffsetMeters: 0.05,
+        centerLiftMultiplier: 0.0,
+      };
+    case 'arcadia-human-probe':
+      return {
+        uri: MODEL_URIS.SR_ODYSSEUS,
+        scale: 0.85,
+        minimumPixelSize: 88,
+        maximumScale: 850,
+        headingDeg: 10,
+        heightOffsetMeters: 0.05,
+        centerLiftMultiplier: 0.0,
+      };
+    case 'deuteronilus-human-probe':
+      return {
+        uri: MODEL_URIS.SR_VIKRAM,
+        scale: 0.85,
+        minimumPixelSize: 88,
+        maximumScale: 850,
+        headingDeg: -20,
+        heightOffsetMeters: 0.05,
+        centerLiftMultiplier: 0.0,
+      };
+    case 'phlegra-human-probe':
+      return {
+        uri: MODEL_URIS.SR_SURVEYOR,
+        scale: 0.9,
+        minimumPixelSize: 86,
+        maximumScale: 880,
+        headingDeg: 35,
+        heightOffsetMeters: 0.05,
+        centerLiftMultiplier: 0.0,
+      };
+    case 'melas-human-probe':
+      return {
+        uri: MODEL_URIS.SR_LUNAR_MODULE,
+        scale: 0.65,
+        minimumPixelSize: 88,
+        maximumScale: 650,
+        headingDeg: 0,
+        heightOffsetMeters: 0.05,
+        centerLiftMultiplier: 0.0,
+      };
+    case 'maw-human-probe':
+      return {
+        uri: MODEL_URIS.SR_CHANGE_4,
+        scale: 0.75,
+        minimumPixelSize: 88,
+        maximumScale: 750,
+        headingDeg: 45,
+        heightOffsetMeters: 0.05,
+        centerLiftMultiplier: 0.0,
+      };
+    case 'isidis-ne-syrtis-probe':
+      return {
+        uri: MODEL_URIS.SR_LUNOKHOD_2,
+        scale: 1.0,
+        minimumPixelSize: 86,
+        maximumScale: 950,
+        headingDeg: -40,
+        heightOffsetMeters: 0.05,
+        centerLiftMultiplier: 0.0,
+      };
+    case 'midway-jezero-probe':
+      return {
+        uri: MODEL_URIS.SR_LUNOKHOD_1,
+        scale: 1.0,
+        minimumPixelSize: 86,
+        maximumScale: 950,
+        headingDeg: 60,
+        heightOffsetMeters: 0.05,
+        centerLiftMultiplier: 0.0,
+      };
+    default:
+      return {
+        uri: MODEL_URIS.SR_PERSEVERANCE,
+        scale: 1.0,
+        minimumPixelSize: 88,
+        maximumScale: 900,
+        headingDeg: 25,
+        heightOffsetMeters: 0.05,
+        centerLiftMultiplier: 0.0,
+      };
+  }
+}

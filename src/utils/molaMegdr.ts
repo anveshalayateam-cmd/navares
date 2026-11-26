@@ -138,10 +138,67 @@ function sampleFallbackPixel(row: number, col: number): number {
   return fallbackView!.getInt16((clampedRow * MEGDR_FALLBACK_WIDTH + wrappedCol) * 2, false);
 }
 
+function cubicCatmullRom(p0: number, p1: number, p2: number, p3: number, t: number): number {
+  const t2 = t * t;
+  const t3 = t2 * t;
+  return (
+    0.5 *
+    (2 * p1 +
+      (-p0 + p2) * t +
+      (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 +
+      (-p0 + 3 * p1 - 3 * p2 + p3) * t3)
+  );
+}
+
+function sampleBicubicGrid(
+  sampler: (row: number, col: number) => number,
+  u: number,
+  v: number
+): number {
+  const col0 = Math.floor(u);
+  const row0 = Math.floor(v);
+  const tx = u - col0;
+  const ty = v - row0;
+
+  const r0 = cubicCatmullRom(
+    sampler(row0 - 1, col0 - 1),
+    sampler(row0 - 1, col0),
+    sampler(row0 - 1, col0 + 1),
+    sampler(row0 - 1, col0 + 2),
+    tx
+  );
+
+  const c10 = sampler(row0, col0 - 1);
+  const c11 = sampler(row0, col0);
+  const c12 = sampler(row0, col0 + 1);
+  const c13 = sampler(row0, col0 + 2);
+  const r1 = cubicCatmullRom(c10, c11, c12, c13, tx);
+
+  const c20 = sampler(row0 + 1, col0 - 1);
+  const c21 = sampler(row0 + 1, col0);
+  const c22 = sampler(row0 + 1, col0 + 1);
+  const c23 = sampler(row0 + 1, col0 + 2);
+  const r2 = cubicCatmullRom(c20, c21, c22, c23, tx);
+
+  const r3 = cubicCatmullRom(
+    sampler(row0 + 2, col0 - 1),
+    sampler(row0 + 2, col0),
+    sampler(row0 + 2, col0 + 1),
+    sampler(row0 + 2, col0 + 2),
+    tx
+  );
+
+  const bicubic = cubicCatmullRom(r0, r1, r2, r3, ty);
+  const cellMin = Math.min(c11, c12, c21, c22);
+  const cellMax = Math.max(c11, c12, c21, c22);
+  const overshootAllowance = (cellMax - cellMin) * 0.12;
+  return Math.max(cellMin - overshootAllowance, Math.min(cellMax + overshootAllowance, bicubic));
+}
+
 /**
- * Return bilinearly interpolated MOLA elevation in meters. Longitude wraps across the
- * dateline; latitude is clamped to the source raster's +90°N..-90°S extent. An optional
- * fallback is used only during the one-time image fetch/decode at application startup.
+ * Return smooth bicubic Catmull-Rom interpolated MOLA elevation in meters. Longitude wraps
+ * across the dateline; latitude is clamped to the source raster's +90°N..-90°S extent. An
+ * optional fallback is used only during the one-time image fetch/decode at application startup.
  */
 export function sampleElevationAt(
   lonDeg: number,
@@ -154,36 +211,14 @@ export function sampleElevationAt(
     const lon360 = ((lonDeg + 180) % 360 + 360) % 360;
     const u = (lon360 / 360) * WIDTH;
     const v = ((90 - clampedLatitude) / 180) * (HEIGHT - 1);
-    const col0 = Math.floor(u);
-    const row0 = Math.floor(v);
-    const tx = u - col0;
-    const ty = v - row0;
-
-    const northWest = samplePngPixel(row0, col0);
-    const northEast = samplePngPixel(row0, col0 + 1);
-    const southWest = samplePngPixel(row0 + 1, col0);
-    const southEast = samplePngPixel(row0 + 1, col0 + 1);
-    const north = northWest + (northEast - northWest) * tx;
-    const south = southWest + (southEast - southWest) * tx;
-    return north + (south - north) * ty;
+    return sampleBicubicGrid(samplePngPixel, u, v);
   }
 
   if (fallbackView) {
     const lon360 = ((lonDeg % 360) + 360) % 360;
     const u = (lon360 / 360) * MEGDR_FALLBACK_WIDTH;
     const v = ((90 - clampedLatitude) / 180) * (MEGDR_FALLBACK_HEIGHT - 1);
-    const col0 = Math.floor(u);
-    const row0 = Math.floor(v);
-    const tx = u - col0;
-    const ty = v - row0;
-
-    const northWest = sampleFallbackPixel(row0, col0);
-    const northEast = sampleFallbackPixel(row0, col0 + 1);
-    const southWest = sampleFallbackPixel(row0 + 1, col0);
-    const southEast = sampleFallbackPixel(row0 + 1, col0 + 1);
-    const north = northWest + (northEast - northWest) * tx;
-    const south = southWest + (southEast - southWest) * tx;
-    return north + (south - north) * ty;
+    return sampleBicubicGrid(sampleFallbackPixel, u, v);
   }
 
   return fallback ? fallback() : 0;

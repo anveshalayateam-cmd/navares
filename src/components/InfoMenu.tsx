@@ -25,10 +25,15 @@ const DATA_ATTRIBUTIONS = [
       <>
         High-Resolution Orbital Detail: Bruce Murray Laboratory for Planetary Visualization
         (Caltech) / NASA MRO CTX Global Mosaic (
-        <span className="font-mono-tabular text-slate-200">~5 m/px</span>, opt-in Extra Details
-        overlay across Optical, Elevation, Temperature, and Radiation modes;{' '}
-        <span className="font-mono-tabular text-slate-200">murray-lab.caltech.edu/CTX/</span>
-        ) — <em className="text-slate-300">NASA / JPL / MSSS / Caltech Murray Lab</em>.
+        <span className="font-mono-tabular text-slate-200">~5 m/px</span>,{' '}
+        <span className="font-mono-tabular text-slate-200">murray-lab.caltech.edu/CTX/</span>)
+        and selective close-range NASA Mars Trek / MRO HiRISE site mosaics (
+        <span className="font-mono-tabular text-slate-200">~0.25 m/px</span> over Jezero, Gale,
+        Meridiani, Columbia Hills, Elysium, Ares Vallis, Vastitas Borealis, Chryse, and Utopia) —{' '}
+        <em className="text-slate-300">
+          NASA / JPL / MSSS / University of Arizona / Caltech Murray Lab
+        </em>
+        .
       </>
     ),
   },
@@ -158,6 +163,35 @@ const DATA_ATTRIBUTIONS = [
         image is synthetic and illustrative; it is not a real photograph, official mission
         image, or direct observation of Mars. It should not be interpreted as scientifically
         verified imagery or as an accurate record of actual surface conditions.
+      </>
+    ),
+  },
+  {
+    title: '3D Spacecraft, Rover & Lander Models (glTF / GLB)',
+    description: (
+      <>
+        Interactive close-up 3D models of Martian orbiters (MRO, MAVEN, Mars Odyssey, MGS, Mars
+        Express, ExoMars TGO, UAE Hope, Tianwen-1, Mangalyaan, Viking, Mariner 9, MarCO, MMX,
+        MSR-ERO) and surface craft (Perseverance, Curiosity, Ingenuity, Zhurong, Pathfinder &amp;
+        Sojourner, Spirit, Opportunity, InSight, Phoenix, Viking 1/2, Mars 3) are streamed from{' '}
+        <a
+          href="https://eyes.nasa.gov/"
+          target="_blank"
+          rel="noreferrer"
+          className="text-cyan-300 underline underline-offset-2 hover:text-cyan-200"
+        >
+          NASA&apos;s Eyes on the Solar System
+        </a>{' '}
+        and{' '}
+        <a
+          href="https://github.com/Sara-Managed-Projects/space-radar"
+          target="_blank"
+          rel="noreferrer"
+          className="text-cyan-300 underline underline-offset-2 hover:text-cyan-200"
+        >
+          Space Radar (MIT)
+        </a>{' '}
+        — <em className="text-slate-300">NASA / JPL-Caltech / ESA / CNSA / MBRSC / ISRO / JAXA</em>.
       </>
     ),
   },
@@ -727,15 +761,11 @@ export function InfoMenu({ hasTargetCardOpen }: InfoMenuProps) {
                       Scientific Scale Note
                     </div>
                     <p className="text-xs sm:text-[13px] leading-relaxed text-amber-100/95">
-                      Note: Vector sprites and 3D/2D visual representations of rovers, landers, and
-                      orbiting satellites are enlarged{' '}
-                      <span className="font-mono-tabular font-semibold text-amber-200">~1,000×</span>{' '}
-                      relative to planetary scale for better visual clarity and interactive
-                      experience.
-                    </p>
-                    <p className="text-xs sm:text-[13px] leading-relaxed text-amber-100/95">
-                      Note: Custom 2D/3D vector sprites for rovers, landers, and orbiting satellites
-                      were generated with AI assistance.
+                      Note: 3D models of rovers, landers, and orbiting satellites are dynamically
+                      enlarged relative to planetary scale at orbital and regional distances for
+                      visual clarity, smoothly transitioning toward true{' '}
+                      <span className="font-mono-tabular font-semibold text-amber-200">1:1</span>{' '}
+                      physical proportions at close surface zoom.
                     </p>
                     <p className="text-xs sm:text-[13px] leading-relaxed text-amber-100/95">
                       Disclaimer: 3D terrain relief runs at 1:1 planetary scale with procedurally
@@ -827,8 +857,7 @@ export function InfoMenu({ hasTargetCardOpen }: InfoMenuProps) {
                       <strong className="font-semibold text-white">ChatGPT</strong>, and{' '}
                       <strong className="font-semibold text-white">Grok</strong> — used for code
                       architecture, CesiumJS geospatial debugging, dataset structuring, UI
-                      refinement, shader/lighting adjustments, and generating custom SVG/vector
-                      spacecraft sprites.
+                      refinement, and shader/lighting adjustments.
                     </p>
                   </div>
                 </>

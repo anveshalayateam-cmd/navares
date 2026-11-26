@@ -11,10 +11,11 @@ import { LiveOrbiterElements } from '../services/marsOrbiterSync';
 import { RoverTelemetryFix } from '../services/marsRoverTelemetry';
 import { CesiumEntity, CesiumImageryLayer, CesiumViewer } from '../types/cesium';
 import {
+  SpacecraftModelSpec,
   computeSatelliteCartesian,
   createGlowPinDataUri,
-  createRoverSprite,
-  createSatelliteSprite,
+  getRoverModelSpec,
+  getSatelliteModelSpec,
   sampleSatelliteOrbitArc,
 } from '../utils/marsMath';
 import {
@@ -210,21 +211,84 @@ function getCtxFadeAlpha(cameraHeightMeters: number): number {
   return CTX_MAX_ALPHA * smooth;
 }
 
-const ROCK_DETAIL_MAX_ALPHA = 0.86;
-const ROCK_DETAIL_FADE_START_METERS = 26_000;
-const ROCK_DETAIL_FULL_ALPHA_METERS = 2_200;
+// Selective close-range MRO HiRISE (~0.25 m/px) mosaics from NASA Mars Trek.
+// Bounded strictly to each mission site's WMTS footprint so outside areas stay 100% untouched.
+const HIRISE_MAX_ALPHA = 0.74;
+const HIRISE_FADE_START_METERS = 90_000;
+const HIRISE_FULL_ALPHA_METERS = 8_000;
 
-function getRockDetailFadeAlpha(clearanceMeters: number): number {
-  const progress = Math.max(
-    0,
-    Math.min(
-      1,
-      (ROCK_DETAIL_FADE_START_METERS - clearanceMeters) /
-        (ROCK_DETAIL_FADE_START_METERS - ROCK_DETAIL_FULL_ALPHA_METERS)
-    )
-  );
+interface HiriseSiteLayerConfig {
+  id: string;
+  layer: string;
+  bbox: [number, number, number, number];
+  maxLevel: number;
+}
+
+const HIRISE_SELECTIVE_SITES: HiriseSiteLayerConfig[] = [
+  {
+    id: 'jezero-perseverance',
+    layer: 'JEZ_hirise_soc_006_orthoMosaic_25cm_Eqc_latTs0_lon0_first_dd',
+    bbox: [77.2229331, 18.3067994, 77.583964, 18.669315],
+    maxLevel: 17,
+  },
+  {
+    id: 'gale-curiosity',
+    layer: 'curiosity_hirise_mosaic',
+    bbox: [137.1224669, -4.9254743, 137.7298129, -4.2489588],
+    maxLevel: 16,
+  },
+  {
+    id: 'meridiani-opportunity',
+    layer: 'opportunity_hirise_mosaic',
+    bbox: [-5.5964391, -2.7513281, -4.9954112, -1.8994384],
+    maxLevel: 17,
+  },
+  {
+    id: 'gusev-spirit',
+    layer: 'spirit_hirise_mosaic',
+    bbox: [175.4278511, -14.6925026, 175.5858031, -14.5357546],
+    maxLevel: 17,
+  },
+  {
+    id: 'elysium-insight',
+    layer: 'ESP_058005_1845_RED_spline_rect',
+    bbox: [135.5687727, 4.3304903, 135.6963018, 4.6680121],
+    maxLevel: 17,
+  },
+  {
+    id: 'vastitas-phoenix',
+    layer: 'phoenix_hirise_mosaic',
+    bbox: [-125.8898226, 68.165978, -125.6607922, 68.2499439],
+    maxLevel: 16,
+  },
+  {
+    id: 'aresvallis-pathfinder',
+    layer: 'sojourner_hirise_mosaic',
+    bbox: [-33.2879718, 19.0227898, -33.208734, 19.1598471],
+    maxLevel: 16,
+  },
+  {
+    id: 'chryse-viking1',
+    layer: 'PSP_001521_2025_RED',
+    bbox: [-48.0315109, 22.0911996, -47.8627669, 22.4608596],
+    maxLevel: 17,
+  },
+  {
+    id: 'utopia-viking2',
+    layer: 'PSP_001501_2280_RED',
+    bbox: [134.1990102, 47.5633533, 134.3996328, 47.7836251],
+    maxLevel: 16,
+  },
+];
+
+function getHiriseFadeAlpha(cameraHeightMeters: number): number {
+  if (cameraHeightMeters >= HIRISE_FADE_START_METERS) return 0;
+  if (cameraHeightMeters <= HIRISE_FULL_ALPHA_METERS) return HIRISE_MAX_ALPHA;
+  const progress =
+    (HIRISE_FADE_START_METERS - cameraHeightMeters) /
+    (HIRISE_FADE_START_METERS - HIRISE_FULL_ALPHA_METERS);
   const smooth = progress * progress * (3 - 2 * progress);
-  return ROCK_DETAIL_MAX_ALPHA * smooth;
+  return HIRISE_MAX_ALPHA * smooth;
 }
 
 // Clouds: full at high altitude, progressive fade as the camera zooms in.
@@ -233,8 +297,10 @@ const CLOUDS_FADE_START_METERS = 3_500_000; // begin fading below ~3500 km
 const CLOUDS_FADE_END_METERS = 250_000; // fully gone near surface
 const CLOUD_SHELL_ALTITUDE_METERS = 58_000;
 const ATMOSPHERE_SHELL_ALTITUDE_METERS = 310_000;
-const ATMOSPHERE_FULL_VISIBLE_METERS = 100_000;
-const ATMOSPHERE_FADE_OUT_METERS = 200_000;
+const ATMOSPHERE_FULL_VISIBLE_METERS = 38_000;
+const ATMOSPHERE_FADE_OUT_METERS = 160_000;
+const ORBITAL_HORIZON_RIM_START_METERS = 1_500_000;
+const ORBITAL_HORIZON_RIM_FULL_METERS = 220_000;
 
 function getCloudFadeAlpha(cameraHeightMeters: number): number {
   if (cameraHeightMeters >= CLOUDS_FADE_START_METERS) return CLOUDS_MAX_ALPHA;
@@ -378,9 +444,9 @@ function triangulateFreehandMarsPolygon(rawVertices: SitePolygonVertex[]): Trian
   const diag = Math.hypot(maxLon - minLon, maxLat - minLat);
   if (diag < 1e-6) return null;
 
-  // Deduplicate close vertices so ear-clipping remains numerically robust
-  const minVertSep = diag * 0.008;
-  const cleaned: Array<{ latDeg: number; lonDeg: number }> = [];
+  // Deduplicate only near-identical samples so curves and corners stay sharp
+  const minVertSep = diag * 0.0015;
+  let cleaned: Array<{ latDeg: number; lonDeg: number }> = [];
   for (const v of unwrapped) {
     const prev = cleaned[cleaned.length - 1];
     if (!prev || Math.hypot(v.lonDeg - prev.lonDeg, v.latDeg - prev.latDeg) >= minVertSep) {
@@ -397,6 +463,56 @@ function triangulateFreehandMarsPolygon(rawVertices: SitePolygonVertex[]): Trian
     cleaned.pop();
   }
   if (cleaned.length < 3) return null;
+
+  // For ultra-dense 2px freehand traces, simplify only the internal fill mesh above 260 points
+  // using Ramer-Douglas-Peucker so sharp corners/curves hold while ear-clipping stays < 2ms.
+  if (cleaned.length > 260) {
+    const perpDist = (
+      p: { latDeg: number; lonDeg: number },
+      a: { latDeg: number; lonDeg: number },
+      b: { latDeg: number; lonDeg: number }
+    ) => {
+      const dx = b.lonDeg - a.lonDeg;
+      const dy = b.latDeg - a.latDeg;
+      const lenSq = dx * dx + dy * dy;
+      if (lenSq <= 1e-18) return Math.hypot(p.lonDeg - a.lonDeg, p.latDeg - a.latDeg);
+      const t = Math.max(0, Math.min(1, ((p.lonDeg - a.lonDeg) * dx + (p.latDeg - a.latDeg) * dy) / lenSq));
+      return Math.hypot(p.lonDeg - (a.lonDeg + t * dx), p.latDeg - (a.latDeg + t * dy));
+    };
+    const rdpFilter = (pts: Array<{ latDeg: number; lonDeg: number }>, eps: number) => {
+      const keep = new Uint8Array(pts.length);
+      keep[0] = 1;
+      keep[pts.length - 1] = 1;
+      const stack: Array<[number, number]> = [[0, pts.length - 1]];
+      while (stack.length > 0) {
+        const [start, end] = stack.pop()!;
+        if (end - start <= 1) continue;
+        let maxD = -1;
+        let maxIdx = -1;
+        for (let i = start + 1; i < end; i++) {
+          const d = perpDist(pts[i], pts[start], pts[end]);
+          if (d > maxD) {
+            maxD = d;
+            maxIdx = i;
+          }
+        }
+        if (maxD > eps && maxIdx !== -1) {
+          keep[maxIdx] = 1;
+          stack.push([start, maxIdx], [maxIdx, end]);
+        }
+      }
+      return pts.filter((_, idx) => keep[idx] === 1);
+    };
+    let eps = diag * 0.0018;
+    let simplified = cleaned;
+    for (let iter = 0; iter < 8 && simplified.length > 240; iter++) {
+      simplified = rdpFilter(cleaned, eps);
+      eps *= 1.45;
+    }
+    if (simplified.length >= 3) {
+      cleaned = simplified;
+    }
+  }
 
   // Ensure counter-clockwise orientation
   let signedArea2 = 0;
@@ -573,8 +689,8 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
 
   const vikingLayerRef = useRef<CesiumImageryLayer | null>(null);
   const ctxLayerRef = useRef<CesiumImageryLayer | null>(null);
+  const hiriseLayersRef = useRef<CesiumImageryLayer[]>([]);
   const redTintLayerRef = useRef<CesiumImageryLayer | null>(null);
-  const rockDetailLayerRef = useRef<CesiumImageryLayer | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const cloudShellPrimitiveRef = useRef<any>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -601,6 +717,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
   const pinEntitiesRef = useRef<Map<string, CesiumEntity>>(new Map());
   const spacecraftEntitiesRef = useRef<Map<string, CesiumEntity>>(new Map());
   const roverEntitiesRef = useRef<Map<string, CesiumEntity>>(new Map());
+  const attachTargetModelRef = useRef<((target: MarsTarget) => void) | null>(null);
   const orbitRingEntitiesRef = useRef<Map<string, CesiumEntity>>(new Map());
   const orbitWakeEntitiesRef = useRef<Map<string, CesiumEntity>>(new Map());
   const simBoostMsRef = useRef<number>(0);
@@ -705,7 +822,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
   // Pencil Freehand Site Habitability Selection refs
   const sitePolyStateRef = useRef<{
     isDrawing: boolean;
-    vertices: Array<{ latDeg: number; lonDeg: number; elevMeters: number }>;
+    vertices: Array<{ latDeg: number; lonDeg: number; elevMeters: number; pickedElevMeters?: number }>;
     lastScreenPos: { x: number; y: number } | null;
     ringSamples: Array<{
       latDeg: number;
@@ -713,6 +830,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
       elev0: number;
       elev4: number;
       elev11: number;
+      pickedElevMeters?: number;
     }>;
     ringSpanMeters: number;
     builtDetailLevel: number | null;
@@ -859,6 +977,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
   };
 
   const zoomToTargetInternal = (target: MarsTarget) => {
+    attachTargetModelRef.current?.(target);
     if (target.category === 'satellite' && target.orbit) {
       const viewer = viewerRef.current;
       const Cesium = window.Cesium;
@@ -925,7 +1044,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     }
     if (target.category === 'rover') {
       const coords = getRoverCoords(target);
-      // Fly smoothly below 35 km (slant range ~11 km) to reveal the rover directly on the crater floor
+      // Fly smoothly below 35 km (slant range ~11 km) to reveal the 3D rover directly on the crater floor
       zoomToLocationInternal(coords.latitude, coords.longitude, 11000);
       return;
     }
@@ -1501,6 +1620,19 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
       ? MOBILE_RESOLUTION_SCALE
       : Math.min(window.devicePixelRatio || 1, DESKTOP_MAX_RESOLUTION_SCALE);
 
+    // Enable hardware MSAA for smooth 3D terrain/orbit silhouettes while keeping FXAA off
+    // so screen-space post-processing never blurs 3D Cesium text labels.
+    try {
+      if (viewer.scene.msaaSupported !== false) {
+        viewer.scene.msaaSamples = mobileOrTouch ? 2 : 4;
+      }
+    } catch {
+      // Safe fallback when WebGL2 MSAA is unavailable
+    }
+    if (viewer.scene.postProcessStages?.fxaa) {
+      viewer.scene.postProcessStages.fxaa.enabled = false;
+    }
+
     // Smooth continuous camera motion requires the render loop to run every frame.
     viewer.scene.requestRenderMode = false;
 
@@ -1550,16 +1682,6 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     viewer.scene.highDynamicRange = false;
     const marsSkyAtmosphere = new Cesium.SkyAtmosphere(marsEllipsoid);
     marsSkyAtmosphere.show = false;
-    marsSkyAtmosphere.hueShift = -0.045;
-    marsSkyAtmosphere.saturationShift = 0.08;
-    marsSkyAtmosphere.brightnessShift = 0.14;
-    marsSkyAtmosphere.atmosphereRayleighScaleHeight = 22_200;
-    marsSkyAtmosphere.atmosphereMieScaleHeight = 11_600;
-    marsSkyAtmosphere.atmosphereRayleighCoefficient = marsRayleighCoeff;
-    marsSkyAtmosphere.atmosphereMieCoefficient = marsMieCoeff;
-    marsSkyAtmosphere.atmosphereMieAnisotropy = 0.72;
-    marsSkyAtmosphere.atmosphereLightIntensity = 0.0;
-    marsSkyAtmosphere.perFragmentAtmosphere = true;
     viewer.scene.skyAtmosphere = marsSkyAtmosphere;
 
     viewer.scene.globe.baseColor = Cesium.Color.BLACK;
@@ -1573,10 +1695,9 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     // Keep the Optical terminator active at every zoom level, but never shade
     // the scientific Radiation, Temperature, or Elevation map styles.
     viewer.scene.globe.enableLighting = initialShadowEnabled;
-    viewer.scene.globe.dynamicAtmosphereLighting = initialShadowEnabled;
-    // Use the same camera-relative directional light as the surface terminator.
+    viewer.scene.globe.dynamicAtmosphereLighting = false;
     viewer.scene.globe.dynamicAtmosphereLightingFromSun = false;
-    viewer.scene.globe.showGroundAtmosphere = true;
+    viewer.scene.globe.showGroundAtmosphere = false;
     viewer.scene.globe.nightFadeInDistance = 10_000_000.0;
     viewer.scene.globe.nightFadeOutDistance = 50_000_000.0;
     if (viewer.scene.fog) {
@@ -1589,14 +1710,6 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     viewer.scene.globe.lightingFadeOutDistance = 1_000_000_000;
     viewer.scene.globe.lightingFadeInDistance = 1_000_000_000;
     viewer.scene.globe.atmosphereLightIntensity = 0.0;
-    viewer.scene.globe.atmosphereHueShift = -0.045;
-    viewer.scene.globe.atmosphereSaturationShift = 0.08;
-    viewer.scene.globe.atmosphereBrightnessShift = 0.14;
-    viewer.scene.globe.atmosphereRayleighScaleHeight = 22_200;
-    viewer.scene.globe.atmosphereMieScaleHeight = 11_600;
-    viewer.scene.globe.atmosphereRayleighCoefficient = marsRayleighCoeff;
-    viewer.scene.globe.atmosphereMieCoefficient = marsMieCoeff;
-    viewer.scene.globe.atmosphereMieAnisotropy = 0.72;
     viewer.scene.globe.depthTestAgainstTerrain = true;
     (viewer.scene.globe as any).lambertDiffuseMultiplier = 0.85;
     (viewer.scene.globe as any).showWaterEffect = false;
@@ -1776,6 +1889,70 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     ctxLayer.gamma = CTX_COLOR_FAR.gamma;
     ctxLayerRef.current = ctxLayer;
 
+    // 2a-hirise. Close-range selective MRO HiRISE (~0.25m/px) overlays over curated landing sites.
+    // Bounded to exact site footprints & transparent outside coverage so default renderer stays intact everywhere else.
+    const transparentTileFallback = document.createElement('canvas');
+    transparentTileFallback.width = 4;
+    transparentTileFallback.height = 4;
+    const hiriseLayers: CesiumImageryLayer[] = [];
+    const unbindHiriseErrs: Array<() => void> = [];
+    for (const site of HIRISE_SELECTIVE_SITES) {
+      const hiriseProvider = new Cesium.WebMapTileServiceImageryProvider({
+        url: `https://trek.nasa.gov/tiles/Mars/EQ/${site.layer}/1.0.0/{Style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}.png`,
+        layer: site.layer,
+        style: 'default',
+        format: 'image/png',
+        tileMatrixSetID: 'default028mm',
+        minimumLevel: 10,
+        maximumLevel: site.maxLevel,
+        rectangle: Cesium.Rectangle.fromDegrees(
+          site.bbox[0],
+          site.bbox[1],
+          site.bbox[2],
+          site.bbox[3]
+        ),
+        tilingScheme: marsTilingScheme,
+      });
+      const providerWithReq = hiriseProvider as {
+        requestImage?: (
+          col: number,
+          row: number,
+          level: number,
+          request?: unknown
+        ) => Promise<unknown> | undefined;
+      };
+      const rawReq = providerWithReq.requestImage?.bind(hiriseProvider);
+      if (rawReq) {
+        providerWithReq.requestImage = (
+          col: number,
+          row: number,
+          level: number,
+          request?: unknown
+        ) => {
+          const p = rawReq(col, row, level, request);
+          if (p && typeof p.then === 'function') {
+            return p.catch(() => transparentTileFallback);
+          }
+          return p;
+        };
+      }
+      unbindHiriseErrs.push(
+        hiriseProvider.errorEvent.addEventListener((e: { retry?: boolean }) => {
+          if (e) e.retry = false;
+        })
+      );
+      const hLayer = viewer.imageryLayers.addImageryProvider(hiriseProvider);
+      configureLayerFiltering(hLayer);
+      hLayer.show = false;
+      hLayer.alpha = 0.0;
+      hLayer.contrast = 1.16;
+      hLayer.brightness = 0.99;
+      hLayer.gamma = 0.90;
+      hLayer.saturation = 1.0;
+      hiriseLayers.push(hLayer);
+    }
+    hiriseLayersRef.current = hiriseLayers;
+
     // 2a-tint. Progressive ferric-oxide red surface glaze below 500 km (tints grayscale CTX1 too)
     const redTintCanvas = document.createElement('canvas');
     redTintCanvas.width = 8;
@@ -1796,32 +1973,19 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     redTintLayer.alpha = 0.0;
     redTintLayerRef.current = redTintLayer;
 
-    // 2a. Site-Geology Micro-Rock & Regolith Imagery (rendered levels 11..18 below 26 km;
-    //     minimumLevel stays 0 so Cesium never enumerates millions of skeletons for ancestor tiles)
-    const rockDetailProvider = createMarsProceduralImageryProvider({
-      Cesium,
-      tilingScheme: marsTilingScheme,
-      mode: 'rock-detail',
-      minimumLevel: 0,
-      minRenderLevel: 11,
-      maximumLevel: 18,
-    });
-    const rockDetailLayer = viewer.imageryLayers.addImageryProvider(rockDetailProvider);
-    configureLayerFiltering(rockDetailLayer);
-    rockDetailLayer.show = false;
-    rockDetailLayer.alpha = 0.0;
-    rockDetailLayerRef.current = rockDetailLayer;
-
     // 2b. 3D Horizon-Emerging Martian Sky Dome Shell:
-    //     mimics the attached Mars horizon photo (warm creamy sandy-peach horizon emerging
-    //     with increasing intensity below 100 km, rising to dusky rose / muted amber overhead).
+    //     1,500 km -> 160 km: delicate milky-white planetary limb hug (ppp.jfif) fading cleanly into space
+    //     160 km -> 38 km: smooth emergence into warm sandy-peach horizon & dusky-rose / muted-amber sky.
     const horizonAtmosphereMaterial = new Cesium.Material({
       fabric: {
         type: 'MarsHorizonAtmosphereShell',
         uniforms: {
           u_localUpEC: new Cesium.Cartesian3(0.0, 0.0, 1.0),
+          u_sunDirEC: new Cesium.Cartesian3(0.66, 0.42, 0.623),
           u_horizonCos: 0.0,
           u_camAltitudeKm: 20000.0,
+          u_atmRiseT: 0.0,
+          u_orbitalMaxElevRad: 0.25,
           u_opacity: 0.0,
           u_shadowEnabled: initialShadowEnabled ? 1.0 : 0.0,
           u_opticalBoost: 1.0,
@@ -1829,8 +1993,11 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
         },
         source: `
           uniform vec3 u_localUpEC;
+          uniform vec3 u_sunDirEC;
           uniform float u_horizonCos;
           uniform float u_camAltitudeKm;
+          uniform float u_atmRiseT;
+          uniform float u_orbitalMaxElevRad;
           uniform float u_opacity;
           uniform float u_shadowEnabled;
           uniform float u_opticalBoost;
@@ -1847,58 +2014,77 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
             float horizonAngle = asin(clamp(u_horizonCos, -1.0, 1.0));
             float elevAboveHorizon = rayAngle - horizonAngle;
 
-            // Below 100 km replace space/stars completely with the dusky rose & muted amber sky;
-            // smoothly fade into orbital space between 100 km and 138 km.
-            float nearSurfaceSkyT = 1.0 - smoothstep(100.0, 138.0, u_camAltitudeKm);
-            // Increases continuously in intensity as the camera moves closer to the surface below 100 km
-            float altFrac = 1.0 - clamp(u_camAltitudeKm / 100.0, 0.0, 1.0);
-            float below100Intensity = altFrac <= 0.0 ? 0.0 : pow(max(altFrac, 1e-4), 0.70);
+            // Smooth logarithmic-altitude atmospheric rise (160 km -> 38 km)
+            float atmRiseT = clamp(u_atmRiseT, 0.0, 1.0);
+            float horizonGlowT = smoothstep(0.0, 0.68, atmRiseT);
+            float zenithVeilT = pow(max(atmRiseT, 1e-4), 1.85);
 
-            // Suspended dust layer thickens & emerges more strongly from horizon when descending below 100 km
-            float orbitalScale = mix(0.18, 0.095, clamp(u_camAltitudeKm / 180.0, 0.0, 1.0));
-            float scaleAngle = mix(orbitalScale, 0.36, below100Intensity);
-            float belowFade = mix(smoothstep(-0.28, 0.0, elevAboveHorizon), 1.0, nearSurfaceSkyT);
+            // Delicate, tight milky-white orbital limb rim (1,500 km -> 160 km),
+            // dissolving rapidly into pure black space with zero thick yellow outer band.
+            float orbitalScale = mix(
+              0.0125,
+              0.0052,
+              clamp((u_camAltitudeKm - 140.0) / 700.0, 0.0, 1.0)
+            );
+            float orbitalBelowFade = smoothstep(-0.028, 0.0025, elevAboveHorizon);
+            float shellEdgeFade = mix(
+              1.0 - smoothstep(
+                u_orbitalMaxElevRad * 0.06,
+                u_orbitalMaxElevRad * 0.45,
+                max(elevAboveHorizon, 0.0)
+              ),
+              1.0,
+              smoothstep(0.0, 0.28, atmRiseT)
+            );
+            float orbitalDepth = exp(-max(elevAboveHorizon, 0.0) / orbitalScale) * orbitalBelowFade * shellEdgeFade;
+            vec3 orbitalWhitishColor = mix(
+              vec3(0.83, 0.88, 0.96),
+              vec3(0.97, 0.96, 0.96),
+              smoothstep(0.22, 0.92, orbitalDepth)
+            );
+            float orbitalAlpha = pow(max(orbitalDepth, 1e-4), 2.1) * 0.86 * shellEdgeFade;
+
+            // Low-altitude Martian sky dome: horizon builds first, then upper dusky-rose sky seals overhead
+            float scaleAngle = mix(orbitalScale, 0.36, horizonGlowT);
+            float belowFade = mix(orbitalBelowFade, 1.0, atmRiseT);
             float opticalDepth = exp(-max(elevAboveHorizon, 0.0) / scaleAngle) * belowFade;
 
-            // Directional Mie forward scattering & day-night illumination:
-            // - In orbit (> 100 km), shade along the limb radial relative to the camera sun vector.
-            // - Below 100 km, illuminate the local sky dome using the surface solar elevation (u_localDayScale)
-            //   so Optical mode shows the full luminous horizon atmosphere in every look direction.
-            vec3 sunDirEC = normalize(vec3(0.66, 0.42, 0.623));
+            vec3 sunDirEC = normalize(u_sunDirEC);
             float sunAlign = clamp(dot(rayDirEC, sunDirEC), 0.0, 1.0);
             float mieForward = pow(max(sunAlign, 1e-4), 3.0) * 0.14;
-            vec3 orbitalLimbDirEC = normalize(vec3(rayDirEC.x, rayDirEC.y, 0.18));
-            float orbitalNdotL = dot(orbitalLimbDirEC, sunDirEC);
-            float orbitalDayMask = mix(1.0, 0.24 + 0.76 * smoothstep(-0.34, 0.34, orbitalNdotL), u_shadowEnabled);
-            float dayMask = mix(orbitalDayMask, u_localDayScale, nearSurfaceSkyT);
+            float orbitalNdotL = dot(rayDirEC, sunDirEC);
+            float orbitalDayMask = mix(1.0, 0.14 + 0.86 * smoothstep(-0.42, 0.25, orbitalNdotL), u_shadowEnabled);
+            float dayMask = mix(orbitalDayMask, u_localDayScale, horizonGlowT);
 
-            // Palette matching the attached Mars surface photo:
-            // luminous pale creamy-sand horizon -> warm sandy-peach -> muted amber -> dusky rose/amber zenith
-            vec3 horizonTone = mix(vec3(0.91, 0.84, 0.75), vec3(0.95, 0.89, 0.80), u_opticalBoost);
+            // Luminous pale creamy-sand/caramel horizon -> warm sandy-peach -> muted amber -> dusky rose zenith
+            vec3 caramelTone = mix(vec3(0.91, 0.84, 0.75), vec3(0.95, 0.89, 0.80), u_opticalBoost);
             vec3 lowerSkyTone = mix(vec3(0.84, 0.72, 0.61), vec3(0.89, 0.77, 0.65), u_opticalBoost);
             vec3 midSkyTone = mix(vec3(0.71, 0.55, 0.45), vec3(0.76, 0.59, 0.48), u_opticalBoost);
             vec3 zenithTone = mix(vec3(0.50, 0.35, 0.33), vec3(0.56, 0.39, 0.36), u_opticalBoost);
 
-            vec3 skyColor = mix(zenithTone, midSkyTone, smoothstep(0.03, 0.34, opticalDepth));
-            skyColor = mix(skyColor, lowerSkyTone, smoothstep(0.34, 0.72, opticalDepth));
-            skyColor = mix(skyColor, horizonTone, smoothstep(0.72, 0.98, opticalDepth));
-            skyColor += vec3(0.12, 0.09, 0.06) * mieForward * (0.25 + 0.75 * opticalDepth);
+            vec3 martianSkyColor = mix(zenithTone, midSkyTone, smoothstep(0.03, 0.34, opticalDepth));
+            martianSkyColor = mix(martianSkyColor, lowerSkyTone, smoothstep(0.34, 0.72, opticalDepth));
+            martianSkyColor = mix(martianSkyColor, caramelTone, smoothstep(0.72, 0.98, opticalDepth));
+            martianSkyColor += vec3(0.12, 0.09, 0.06) * mieForward * (0.25 + 0.75 * opticalDepth);
 
-            // Horizon-emerging radiance boost below 100 km without clipping to flat white
-            float horizonEmergence = exp(-max(elevAboveHorizon, 0.0) / mix(0.06, 0.17, below100Intensity)) * belowFade;
-            skyColor = mix(skyColor, horizonTone, horizonEmergence * below100Intensity * 0.48);
-            skyColor = min(skyColor, vec3(0.97, 0.92, 0.84));
+            float horizonEmergence = exp(-max(elevAboveHorizon, 0.0) / mix(0.05, 0.17, horizonGlowT)) * belowFade;
+            martianSkyColor = mix(martianSkyColor, caramelTone, horizonEmergence * horizonGlowT * 0.46);
+            martianSkyColor = min(martianSkyColor, vec3(0.97, 0.92, 0.84));
 
-            float lowAltBoost = mix(1.0, 0.76, clamp(u_camAltitudeKm / 145.0, 0.0, 1.0));
-            float horizonAlpha = pow(max(opticalDepth, 1e-4), 0.62) * lowAltBoost * (1.55 + 0.65 * below100Intensity);
-            float skyAlpha = clamp(max(horizonAlpha, nearSurfaceSkyT), 0.0, 1.0);
+            // Smoothly blend from the orbital whitish horizon rim into the full Martian sky
+            vec3 skyColor = mix(orbitalWhitishColor, martianSkyColor, horizonGlowT);
 
-            float orbitalGain = mix(0.76 + 0.18 * opticalDepth, 0.82 + 0.20 * opticalDepth, u_opticalBoost);
-            float surfaceGain = orbitalGain + below100Intensity * (0.02 + 0.04 * horizonEmergence);
+            float martianHorizonAlpha = pow(max(opticalDepth, 1e-4), 0.72) * (0.95 + 0.60 * horizonGlowT);
+            float skyAlpha = clamp(max(mix(orbitalAlpha, martianHorizonAlpha, horizonGlowT), zenithVeilT), 0.0, 1.0);
+
+            float orbitalGain = mix(0.92, 1.0, u_opticalBoost);
+            float martianGain = mix(0.76 + 0.18 * opticalDepth, 0.82 + 0.20 * opticalDepth, u_opticalBoost)
+              + atmRiseT * (0.02 + 0.04 * horizonEmergence);
+            float surfaceGain = mix(orbitalGain, martianGain, horizonGlowT);
 
             material.diffuse = vec3(0.0);
             material.emission = clamp(skyColor * surfaceGain * dayMask, vec3(0.0), vec3(0.99));
-            material.alpha = clamp(max(skyAlpha * dayMask, nearSurfaceSkyT) * u_opacity, 0.0, 1.0);
+            material.alpha = clamp(max(skyAlpha * dayMask, zenithVeilT) * u_opacity, 0.0, 1.0);
             return material;
           }
         `,
@@ -1941,8 +2127,9 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     viewer.scene.primitives.add(horizonAtmospherePrimitive);
     horizonAtmospherePrimitiveRef.current = horizonAtmospherePrimitive;
 
-    // 2b-horizon. Distance-based aerial perspective fading toward the horizon (< 100 km clearance, Optical only),
-    // plus 5x3 morphological silhouette edge anti-aliasing across all modes so the horizon curve stays smooth.
+    // 2b-horizon. Optical surface horizon haze (1,500 km -> surface atmosphere: milky-white curved-limb veil
+    // mimicking orbital Mars photography, warming below 160 km into sandy-peach horizon haze) +
+    // tangent-aware silhouette AA (horizon + internal terrain ridgelines + directional high-contrast lines).
     if (Cesium.PostProcessStage && viewer.scene.postProcessStages?.add) {
       const horizonDistanceFadeStage = new Cesium.PostProcessStage({
         name: 'ares_horizon_distance_fade',
@@ -1951,141 +2138,246 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
           uniform sampler2D depthTexture;
           uniform float u_fadeIntensity;
           uniform float u_horizonDistM;
+          uniform float u_marsRadiusM;
+          uniform float u_hazeStart;
+          uniform float u_atmRiseT;
+          uniform float u_shadowEnabled;
           uniform vec3 u_midFadeColor;
           uniform vec3 u_farFadeColor;
           in vec2 v_textureCoordinates;
+
+          bool isSkyDepth(float d) {
+            return d >= 0.999995;
+          }
+
+          float getEyeDistM(vec2 fragCoord, float d) {
+            vec4 posEC = czm_windowToEyeCoordinates(fragCoord, d);
+            return length(posEC.xyz / max(abs(posEC.w), 1e-7));
+          }
+
+          vec3 applyOpticalHorizonHaze(vec3 rgb, float distM, float edgeStrength) {
+            if (u_fadeIntensity <= 0.002) return rgb;
+            float horizonDist = max(2400.0, u_horizonDistM);
+            float distRatio = distM / horizonDist;
+
+            // Exact spherical grazing geometry: 0.0 cleanly at nadir/close ground -> 1.0 along curved limb
+            float mu = clamp(
+              (horizonDist * horizonDist - distM * distM) / max(1.0, 2.0 * u_marsRadiusM * distM),
+              0.0,
+              1.0
+            );
+            float orbitalLimbCurve = pow(smoothstep(u_hazeStart, 1.0, 1.0 - mu), 1.8);
+
+            // Low-altitude distance-based aerial perspective for near-surface valleys & ridges
+            float dNorm = clamp((distRatio - 0.18) / 0.82, 0.0, 1.35);
+            float lowAltCurve = dNorm <= 0.0 ? 0.0 : (1.0 - exp(-pow(max(dNorm * 1.45, 1e-4), 1.65)));
+
+            float hazeCurve = mix(orbitalLimbCurve, max(orbitalLimbCurve * 0.35, lowAltCurve), u_atmRiseT);
+            float baseLum = dot(rgb, vec3(0.299, 0.587, 0.114));
+            float litWeight = mix(1.0, 0.10 + 0.90 * smoothstep(0.012, 0.10, baseLum), u_shadowEnabled);
+
+            float distanceFade = hazeCurve * u_fadeIntensity * litWeight;
+            float edgeBoost = edgeStrength > 0.0
+              ? clamp((0.20 + 0.45 * u_fadeIntensity) * litWeight, 0.0, 0.86) * edgeStrength
+              : 0.0;
+            float maxCap = mix(0.88, 0.62, u_atmRiseT);
+            float fadeAmount = clamp(max(distanceFade, edgeBoost), 0.0, maxCap);
+
+            float colorT = mix(smoothstep(0.12, 0.92, orbitalLimbCurve), smoothstep(0.25, 0.95, dNorm), u_atmRiseT);
+            vec3 horizonColor = mix(u_midFadeColor, u_farFadeColor, colorT);
+            return mix(rgb, horizonColor, fadeAmount);
+          }
 
           void main(void) {
             vec4 baseColor = texture(colorTexture, v_textureCoordinates);
             float rawDepth = texture(depthTexture, v_textureCoordinates).r;
             vec2 texel = 1.0 / max(czm_viewport.zw, vec2(1.0));
-            vec2 uvUp = clamp(v_textureCoordinates + vec2(0.0, texel.y), vec2(0.0), vec2(1.0));
-            vec2 uvDn = clamp(v_textureCoordinates - vec2(0.0, texel.y), vec2(0.0), vec2(1.0));
-            vec2 uvLt = clamp(v_textureCoordinates - vec2(texel.x, 0.0), vec2(0.0), vec2(1.0));
-            vec2 uvRt = clamp(v_textureCoordinates + vec2(texel.x, 0.0), vec2(0.0), vec2(1.0));
+
+            vec2 uvUL = clamp(v_textureCoordinates + vec2(-texel.x,  texel.y), vec2(0.0), vec2(1.0));
+            vec2 uvUp = clamp(v_textureCoordinates + vec2(     0.0,  texel.y), vec2(0.0), vec2(1.0));
+            vec2 uvUR = clamp(v_textureCoordinates + vec2( texel.x,  texel.y), vec2(0.0), vec2(1.0));
+            vec2 uvLt = clamp(v_textureCoordinates + vec2(-texel.x,      0.0), vec2(0.0), vec2(1.0));
+            vec2 uvRt = clamp(v_textureCoordinates + vec2( texel.x,      0.0), vec2(0.0), vec2(1.0));
+            vec2 uvDL = clamp(v_textureCoordinates + vec2(-texel.x, -texel.y), vec2(0.0), vec2(1.0));
+            vec2 uvDn = clamp(v_textureCoordinates + vec2(     0.0, -texel.y), vec2(0.0), vec2(1.0));
+            vec2 uvDR = clamp(v_textureCoordinates + vec2( texel.x, -texel.y), vec2(0.0), vec2(1.0));
+
+            float dUL = texture(depthTexture, uvUL).r;
             float dUp = texture(depthTexture, uvUp).r;
-            float dDn = texture(depthTexture, uvDn).r;
+            float dUR = texture(depthTexture, uvUR).r;
             float dLt = texture(depthTexture, uvLt).r;
             float dRt = texture(depthTexture, uvRt).r;
+            float dDL = texture(depthTexture, uvDL).r;
+            float dDn = texture(depthTexture, uvDn).r;
+            float dDR = texture(depthTexture, uvDR).r;
 
-            bool isSky = rawDepth >= 0.999995;
-            float terrainNeighbors =
-              (dUp < 0.999995 ? 1.0 : 0.0) +
-              (dDn < 0.999995 ? 1.0 : 0.0) +
-              (dLt < 0.999995 ? 1.0 : 0.0) +
-              (dRt < 0.999995 ? 1.0 : 0.0);
-            float skyNeighbors =
-              (dUp >= 0.999995 ? 1.0 : 0.0) +
-              (dDn >= 0.999995 ? 1.0 : 0.0) +
-              (dLt >= 0.999995 ? 1.0 : 0.0) +
-              (dRt >= 0.999995 ? 1.0 : 0.0);
-            bool isEdge = (isSky && terrainNeighbors > 0.0) || (!isSky && skyNeighbors > 0.0);
+            bool isSky = isSkyDepth(rawDepth);
+            float sUL = isSkyDepth(dUL) ? 1.0 : 0.0;
+            float sUp = isSkyDepth(dUp) ? 1.0 : 0.0;
+            float sUR = isSkyDepth(dUR) ? 1.0 : 0.0;
+            float sLt = isSkyDepth(dLt) ? 1.0 : 0.0;
+            float sRt = isSkyDepth(dRt) ? 1.0 : 0.0;
+            float sDL = isSkyDepth(dDL) ? 1.0 : 0.0;
+            float sDn = isSkyDepth(dDn) ? 1.0 : 0.0;
+            float sDR = isSkyDepth(dDR) ? 1.0 : 0.0;
 
-            if (!isEdge && (isSky || u_fadeIntensity <= 0.002)) {
+            float skyNeighbors8 = sUL + sUp + sUR + sLt + sRt + sDL + sDn + sDR;
+            float terrainNeighbors8 = 8.0 - skyNeighbors8;
+            bool isDirectEdge = (isSky && terrainNeighbors8 > 0.0) || (!isSky && skyNeighbors8 > 0.0);
+
+            vec2 uvUp2 = clamp(v_textureCoordinates + vec2(0.0, 2.0 * texel.y), vec2(0.0), vec2(1.0));
+            vec2 uvDn2 = clamp(v_textureCoordinates - vec2(0.0, 2.0 * texel.y), vec2(0.0), vec2(1.0));
+            vec2 uvLt2 = clamp(v_textureCoordinates - vec2(2.0 * texel.x, 0.0), vec2(0.0), vec2(1.0));
+            vec2 uvRt2 = clamp(v_textureCoordinates + vec2(2.0 * texel.x, 0.0), vec2(0.0), vec2(1.0));
+            float dUp2 = texture(depthTexture, uvUp2).r;
+            float dDn2 = texture(depthTexture, uvDn2).r;
+            float dLt2 = texture(depthTexture, uvLt2).r;
+            float dRt2 = texture(depthTexture, uvRt2).r;
+
+            bool nearHorizonBand = isDirectEdge ||
+              (isSky && (!isSkyDepth(dUp2) || !isSkyDepth(dDn2) || !isSkyDepth(dLt2) || !isSkyDepth(dRt2))) ||
+              (!isSky && (isSkyDepth(dUp2) || isSkyDepth(dDn2) || isSkyDepth(dLt2) || isSkyDepth(dRt2)));
+
+            float distC = isSky ? max(2400.0, u_horizonDistM) : getEyeDistM(gl_FragCoord.xy, rawDepth);
+            vec3 terrainRgb = isSky
+              ? baseColor.rgb
+              : applyOpticalHorizonHaze(baseColor.rgb, distC, skyNeighbors8 > 0.0 ? 1.0 : 0.0);
+
+            // 1. Tangent-aligned morphological AA along the planetary horizon curve
+            if (nearHorizonBand) {
+              float gx = (sUR + 2.0 * sRt + sDR) - (sUL + 2.0 * sLt + sDL);
+              float gy = (sUL + 2.0 * sUp + sUR) - (sDL + 2.0 * sDn + sDR);
+              vec2 gradSky = vec2(gx, gy);
+              vec2 tangent = length(gradSky) > 1e-4 ? normalize(vec2(-gradSky.y, gradSky.x)) : vec2(1.0, 0.0);
+
+              float skyWeightSum = (isSky ? 4.0 : 0.0)
+                + (sUp + sDn + sLt + sRt) * 2.0
+                + (sUL + sUR + sDL + sDR) * 1.25;
+              float totalWeight = 4.0 + 8.0 + 5.0;
+
+              for (int k = 1; k <= 2; k++) {
+                float fk = float(k);
+                float wk = k == 1 ? 1.75 : 1.0;
+                vec2 uPos = clamp(v_textureCoordinates + tangent * (fk * 1.15) * texel, vec2(0.0), vec2(1.0));
+                vec2 uNeg = clamp(v_textureCoordinates - tangent * (fk * 1.15) * texel, vec2(0.0), vec2(1.0));
+                skyWeightSum += ((isSkyDepth(texture(depthTexture, uPos).r) ? 1.0 : 0.0)
+                  + (isSkyDepth(texture(depthTexture, uNeg).r) ? 1.0 : 0.0)) * wk;
+                totalWeight += 2.0 * wk;
+              }
+              float localSkyFrac = skyWeightSum / max(totalWeight, 1.0);
+
+              if (isSky) {
+                vec3 edgeSum = vec3(0.0);
+                float edgeCount = 0.0;
+                if (sUp < 0.5) { edgeSum += texture(colorTexture, uvUp).rgb * 2.0; edgeCount += 2.0; }
+                if (sDn < 0.5) { edgeSum += texture(colorTexture, uvDn).rgb * 2.0; edgeCount += 2.0; }
+                if (sLt < 0.5) { edgeSum += texture(colorTexture, uvLt).rgb * 2.0; edgeCount += 2.0; }
+                if (sRt < 0.5) { edgeSum += texture(colorTexture, uvRt).rgb * 2.0; edgeCount += 2.0; }
+                if (sUL < 0.5) { edgeSum += texture(colorTexture, uvUL).rgb; edgeCount += 1.0; }
+                if (sUR < 0.5) { edgeSum += texture(colorTexture, uvUR).rgb; edgeCount += 1.0; }
+                if (sDL < 0.5) { edgeSum += texture(colorTexture, uvDL).rgb; edgeCount += 1.0; }
+                if (sDR < 0.5) { edgeSum += texture(colorTexture, uvDR).rgb; edgeCount += 1.0; }
+
+                vec3 adjTerrain = edgeCount > 0.0
+                  ? edgeSum / edgeCount
+                  : (!isSkyDepth(dDn2) ? texture(colorTexture, uvDn2).rgb
+                    : (!isSkyDepth(dUp2) ? texture(colorTexture, uvUp2).rgb
+                    : (!isSkyDepth(dLt2) ? texture(colorTexture, uvLt2).rgb
+                    : (!isSkyDepth(dRt2) ? texture(colorTexture, uvRt2).rgb : baseColor.rgb))));
+                adjTerrain = applyOpticalHorizonHaze(adjTerrain, max(2400.0, u_horizonDistM), 1.0);
+
+                float blendT = isDirectEdge
+                  ? clamp((1.0 - localSkyFrac) * 1.15, 0.0, 0.78)
+                  : clamp((1.0 - localSkyFrac) * 0.52, 0.0, 0.34);
+                out_FragColor = vec4(mix(baseColor.rgb, adjTerrain, blendT), baseColor.a);
+                return;
+              } else {
+                vec3 skySum = vec3(0.0);
+                float skyCount = 0.0;
+                if (sUp > 0.5) { skySum += texture(colorTexture, uvUp).rgb * 2.0; skyCount += 2.0; }
+                if (sDn > 0.5) { skySum += texture(colorTexture, uvDn).rgb * 2.0; skyCount += 2.0; }
+                if (sLt > 0.5) { skySum += texture(colorTexture, uvLt).rgb * 2.0; skyCount += 2.0; }
+                if (sRt > 0.5) { skySum += texture(colorTexture, uvRt).rgb * 2.0; skyCount += 2.0; }
+                if (sUL > 0.5) { skySum += texture(colorTexture, uvUL).rgb; skyCount += 1.0; }
+                if (sUR > 0.5) { skySum += texture(colorTexture, uvUR).rgb; skyCount += 1.0; }
+                if (sDL > 0.5) { skySum += texture(colorTexture, uvDL).rgb; skyCount += 1.0; }
+                if (sDR > 0.5) { skySum += texture(colorTexture, uvDR).rgb; skyCount += 1.0; }
+
+                vec3 adjSky = skyCount > 0.0
+                  ? skySum / skyCount
+                  : (isSkyDepth(dUp2) ? texture(colorTexture, uvUp2).rgb
+                    : (isSkyDepth(dDn2) ? texture(colorTexture, uvDn2).rgb
+                    : (isSkyDepth(dLt2) ? texture(colorTexture, uvLt2).rgb
+                    : (isSkyDepth(dRt2) ? texture(colorTexture, uvRt2).rgb : terrainRgb))));
+                float blendS = isDirectEdge
+                  ? clamp(localSkyFrac * 1.15, 0.0, 0.78)
+                  : clamp(localSkyFrac * 0.52, 0.0, 0.34);
+                out_FragColor = vec4(mix(terrainRgb, adjSky, blendS), baseColor.a);
+                return;
+              }
+            }
+
+            if (isSky) {
               out_FragColor = baseColor;
               return;
             }
 
-            vec2 uvUp2 = clamp(v_textureCoordinates + vec2(0.0, 2.0 * texel.y), vec2(0.0), vec2(1.0));
-            vec2 uvDn2 = clamp(v_textureCoordinates - vec2(0.0, 2.0 * texel.y), vec2(0.0), vec2(1.0));
-            float dUp2 = texture(depthTexture, uvUp2).r;
-            float dDn2 = texture(depthTexture, uvDn2).r;
-            bool nearEdge = isEdge ||
-              (isSky && (dUp2 < 0.999995 || dDn2 < 0.999995)) ||
-              (!isSky && (dUp2 >= 0.999995 || dDn2 >= 0.999995));
+            // 2. Internal terrain ridgeline & cliff contour depth-discontinuity AA
+            float distUp = getEyeDistM(gl_FragCoord.xy + vec2(0.0, 1.0), dUp);
+            float distDn = getEyeDistM(gl_FragCoord.xy - vec2(0.0, 1.0), dDn);
+            float distLt = getEyeDistM(gl_FragCoord.xy - vec2(1.0, 0.0), dLt);
+            float distRt = getEyeDistM(gl_FragCoord.xy + vec2(1.0, 0.0), dRt);
 
-            vec3 terrainRgb = baseColor.rgb;
-            if (!isSky && u_fadeIntensity > 0.002) {
-              vec4 posEC = czm_windowToEyeCoordinates(gl_FragCoord.xy, rawDepth);
-              float distM = length(posEC.xyz / max(abs(posEC.w), 1e-7));
-              float distRatio = distM / max(2400.0, u_horizonDistM);
-              float dNorm = clamp((distRatio - 0.18) / 0.82, 0.0, 1.35);
+            float relUp = abs(distUp - distC) / max(min(distUp, distC), 35.0);
+            float relDn = abs(distDn - distC) / max(min(distDn, distC), 35.0);
+            float relLt = abs(distLt - distC) / max(min(distLt, distC), 35.0);
+            float relRt = abs(distRt - distC) / max(min(distRt, distC), 35.0);
+            float maxRelJump = max(max(relUp, relDn), max(relLt, relRt));
 
-              // Keep foreground & midground crisp; gently fade distant terrain toward the horizon sky
-              float fadeCurve = dNorm <= 0.0 ? 0.0 : (1.0 - exp(-pow(max(dNorm * 1.45, 1e-4), 1.65)));
-              float distanceFade = fadeCurve * u_fadeIntensity;
-              float edgeBoost = skyNeighbors > 0.0 ? clamp(0.16 + 0.28 * u_fadeIntensity, 0.0, 0.56) : 0.0;
-              float fadeAmount = clamp(max(distanceFade, edgeBoost), 0.0, 0.62);
+            if (maxRelJump > 0.028) {
+              vec2 dGrad = vec2(distRt - distLt, distUp - distDn);
+              vec2 rTangent = length(dGrad) > 1e-4 ? normalize(vec2(-dGrad.y, dGrad.x)) : vec2(1.0, 0.0);
+              vec2 uvT1 = clamp(v_textureCoordinates + rTangent * texel, vec2(0.0), vec2(1.0));
+              vec2 uvT2 = clamp(v_textureCoordinates - rTangent * texel, vec2(0.0), vec2(1.0));
+              vec3 cT1 = applyOpticalHorizonHaze(texture(colorTexture, uvT1).rgb, distC, 0.0);
+              vec3 cT2 = applyOpticalHorizonHaze(texture(colorTexture, uvT2).rgb, distC, 0.0);
+              vec3 tangentSmooth = 0.5 * terrainRgb + 0.25 * (cT1 + cT2);
 
-              vec3 horizonColor = mix(u_midFadeColor, u_farFadeColor, smoothstep(0.25, 0.95, dNorm));
-              terrainRgb = mix(baseColor.rgb, horizonColor, fadeAmount);
-            }
-
-            if (!nearEdge) {
-              out_FragColor = vec4(terrainRgb, baseColor.a);
-              return;
-            }
-
-            // 5x3 morphological silhouette coverage filter to remove staircasing along curved/tilted horizons
-            float skyWeightSum = 0.0;
-            float totalWeight = 0.0;
-            for (int dy = -1; dy <= 1; dy++) {
-              float wy = dy == 0 ? 2.0 : 1.0;
-              for (int dx = -2; dx <= 2; dx++) {
-                int ax = dx < 0 ? -dx : dx;
-                float wx = ax == 0 ? 3.0 : (ax == 1 ? 2.0 : 1.0);
-                float w = wx * wy;
-                vec2 sampleUv = clamp(
-                  v_textureCoordinates + vec2(float(dx), float(dy)) * texel,
-                  vec2(0.0),
-                  vec2(1.0)
-                );
-                float sd = texture(depthTexture, sampleUv).r;
-                skyWeightSum += (sd >= 0.999995 ? 1.0 : 0.0) * w;
-                totalWeight += w;
-              }
-            }
-            float localSkyFrac = skyWeightSum / max(totalWeight, 1.0);
-
-            if (isSky) {
-              if (terrainNeighbors <= 0.0) {
-                vec3 adjTerrain = dDn2 < 0.999995
-                  ? texture(colorTexture, uvDn2).rgb
-                  : (dUp2 < 0.999995 ? texture(colorTexture, uvUp2).rgb : baseColor.rgb);
-                if (u_fadeIntensity > 0.002) {
-                  adjTerrain = mix(adjTerrain, u_farFadeColor, clamp(0.20 + 0.30 * u_fadeIntensity, 0.0, 0.56));
-                }
-                float tFrac = clamp((1.0 - localSkyFrac) * 0.42, 0.0, 0.30);
-                out_FragColor = vec4(mix(baseColor.rgb, adjTerrain, tFrac), baseColor.a);
+              vec3 jumpRgb = terrainRgb;
+              float jumpDist = distC;
+              if (relUp >= relDn && relUp >= relLt && relUp >= relRt) {
+                jumpRgb = texture(colorTexture, uvUp).rgb;
+                jumpDist = distUp;
+              } else if (relDn >= relLt && relDn >= relRt) {
+                jumpRgb = texture(colorTexture, uvDn).rgb;
+                jumpDist = distDn;
+              } else if (relLt >= relRt) {
+                jumpRgb = texture(colorTexture, uvLt).rgb;
+                jumpDist = distLt;
               } else {
-                vec3 edgeSum = vec3(0.0);
-                if (dUp < 0.999995) edgeSum += texture(colorTexture, uvUp).rgb;
-                if (dDn < 0.999995) edgeSum += texture(colorTexture, uvDn).rgb;
-                if (dLt < 0.999995) edgeSum += texture(colorTexture, uvLt).rgb;
-                if (dRt < 0.999995) edgeSum += texture(colorTexture, uvRt).rgb;
-                vec3 neighborTerrain = edgeSum / terrainNeighbors;
-                if (u_fadeIntensity > 0.002) {
-                  neighborTerrain = mix(neighborTerrain, u_farFadeColor, clamp(0.22 + 0.32 * u_fadeIntensity, 0.0, 0.58));
-                }
-                float blendT = clamp((1.0 - localSkyFrac) * 0.95, 0.0, 0.52);
-                out_FragColor = vec4(mix(baseColor.rgb, neighborTerrain, blendT), baseColor.a);
+                jumpRgb = texture(colorTexture, uvRt).rgb;
+                jumpDist = distRt;
               }
+              jumpRgb = applyOpticalHorizonHaze(jumpRgb, jumpDist, 0.0);
+
+              float ridgeBlend = smoothstep(0.028, 0.18, maxRelJump) * 0.44;
+              vec3 ridgeAA = mix(tangentSmooth, jumpRgb, ridgeBlend);
+              out_FragColor = vec4(ridgeAA, baseColor.a);
               return;
             }
 
-            if (skyNeighbors <= 0.0) {
-              vec3 adjSky = dUp2 >= 0.999995
-                ? texture(colorTexture, uvUp2).rgb
-                : (dDn2 >= 0.999995 ? texture(colorTexture, uvDn2).rgb : terrainRgb);
-              float sFrac = clamp(localSkyFrac * 0.38, 0.0, 0.28);
-              out_FragColor = vec4(mix(terrainRgb, adjSky, sFrac), baseColor.a);
-            } else {
-              vec3 skySum = vec3(0.0);
-              if (dUp >= 0.999995) skySum += texture(colorTexture, uvUp).rgb;
-              if (dDn >= 0.999995) skySum += texture(colorTexture, uvDn).rgb;
-              if (dLt >= 0.999995) skySum += texture(colorTexture, uvLt).rgb;
-              if (dRt >= 0.999995) skySum += texture(colorTexture, uvRt).rgb;
-              vec3 neighborSky = skySum / skyNeighbors;
-              float blendS = clamp(localSkyFrac * 0.95, 0.0, 0.56);
-              out_FragColor = vec4(mix(terrainRgb, neighborSky, blendS), baseColor.a);
-            }
+            out_FragColor = vec4(terrainRgb, baseColor.a);
           }
         `,
         uniforms: {
           u_fadeIntensity: 0.0,
           u_horizonDistM: 120000.0,
-          u_midFadeColor: new Cesium.Cartesian3(0.88, 0.77, 0.66),
-          u_farFadeColor: new Cesium.Cartesian3(0.95, 0.89, 0.80),
+          u_marsRadiusM: MARS_CONSTANTS.EQUATORIAL_RADIUS,
+          u_hazeStart: 0.36,
+          u_atmRiseT: 0.0,
+          u_shadowEnabled: initialShadowEnabled ? 1.0 : 0.0,
+          u_midFadeColor: new Cesium.Cartesian3(0.92, 0.90, 0.89),
+          u_farFadeColor: new Cesium.Cartesian3(0.97, 0.97, 0.98),
         },
       });
       if (horizonDistanceFadeStage) {
@@ -2333,7 +2625,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
             position: makeGridPoint(latitude, longitude, 850),
             label: {
               text,
-              font: '600 10px "Chakra Petch", sans-serif',
+              font: '600 11px "Chakra Petch", sans-serif',
               fillColor: Cesium.Color.fromCssColorString('#dbeafe').withAlpha(0.82),
               outlineColor: Cesium.Color.fromCssColorString('#07111c').withAlpha(0.95),
               outlineWidth: 3,
@@ -2480,20 +2772,57 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
           fallbackText: target.shortName,
         });
 
+        const satModelSpec = getSatelliteModelSpec(target.id);
+        const satOrientation = new Cesium.CallbackProperty(() => {
+          const effMs = getEffectiveEpochMs();
+          const liveElem = liveOrbiterElementsRef.current[target.id];
+          const p0 = computeSatelliteCartesian(target, effMs, liveElem);
+          const p1 = computeSatelliteCartesian(target, effMs + 500, liveElem);
+          const posVec = new Cesium.Cartesian3(p0.x, p0.y, p0.z);
+          const velVec = Cesium.Cartesian3.subtract(
+            new Cesium.Cartesian3(p1.x, p1.y, p1.z),
+            posVec,
+            new Cesium.Cartesian3()
+          );
+          if (Cesium.Cartesian3.magnitude(velVec) < 1e-3) {
+            return Cesium.Transforms.headingPitchRollQuaternion(
+              posVec,
+              new Cesium.HeadingPitchRoll(0, 0, 0),
+              marsEllipsoid
+            );
+          }
+          const xAxis = Cesium.Cartesian3.normalize(velVec, new Cesium.Cartesian3());
+          const zApprox = Cesium.Cartesian3.normalize(posVec, new Cesium.Cartesian3());
+          const yAxis = Cesium.Cartesian3.normalize(
+            Cesium.Cartesian3.cross(zApprox, xAxis, new Cesium.Cartesian3()),
+            new Cesium.Cartesian3()
+          );
+          const zAxis = Cesium.Cartesian3.normalize(
+            Cesium.Cartesian3.cross(xAxis, yAxis, new Cesium.Cartesian3()),
+            new Cesium.Cartesian3()
+          );
+          const rotMat = new Cesium.Matrix3(
+            xAxis.x,
+            yAxis.x,
+            zAxis.x,
+            xAxis.y,
+            yAxis.y,
+            zAxis.y,
+            xAxis.z,
+            yAxis.z,
+            zAxis.z
+          );
+          return Cesium.Quaternion.fromRotationMatrix(rotMat);
+        }, false);
+
         const spacecraftEntity = viewer.entities.add({
           id: `${target.id}-spacecraft`,
           name: `${target.name} Spacecraft`,
           position: positionProperty,
+          orientation: satOrientation,
           show: false,
-          billboard: {
-            image: createSatelliteSprite(target.id),
-            width: 256,
-            height: 256,
-            scaleByDistance: new Cesium.NearFarScalar(5000, 1.1, 120000, 0.35),
-            verticalOrigin: Cesium.VerticalOrigin.CENTER,
-            horizontalOrigin: Cesium.HorizontalOrigin.CENTER,
-            eyeOffset: pinEyeOffset,
-            disableDepthTestDistance: Number.POSITIVE_INFINITY,
+          properties: {
+            modelSpec: satModelSpec,
           },
         });
         spacecraftMap.set(target.id, spacecraftEntity);
@@ -2625,22 +2954,46 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
           fallbackText: target.shortName,
         });
 
-        const roverSpriteEntity = viewer.entities.add({
+        const roverModelSpec = getRoverModelSpec(target.id);
+        const roverModelPos = new Cesium.CallbackProperty(() => {
+          const coords = getRoverCoords(target);
+          const groundElev = sampleElevationAt(coords.longitude, coords.latitude);
+          const camH = getCameraHeightMeters();
+          const lift = Math.max(
+            roverModelSpec.heightOffsetMeters ?? 0,
+            Math.min(260, camH * 0.022 * (roverModelSpec.centerLiftMultiplier ?? 0.35))
+          );
+          return getExaggeratedSurfacePosition(coords.latitude, coords.longitude, groundElev, lift);
+        }, false);
+        const roverHeadingRad = Cesium.Math.toRadians(roverModelSpec.headingDeg ?? 25);
+        const roverPitchRad = Cesium.Math.toRadians(roverModelSpec.pitchDeg ?? 0);
+        const roverRollRad = Cesium.Math.toRadians(roverModelSpec.rollDeg ?? 0);
+        const roverOrientation = new Cesium.CallbackProperty(() => {
+          const coords = getRoverCoords(target);
+          const pos = getExaggeratedSurfacePosition(
+            coords.latitude,
+            coords.longitude,
+            sampleElevationAt(coords.longitude, coords.latitude),
+            0
+          );
+          return Cesium.Transforms.headingPitchRollQuaternion(
+            pos,
+            new Cesium.HeadingPitchRoll(roverHeadingRad, roverPitchRad, roverRollRad),
+            marsEllipsoid
+          );
+        }, false);
+
+        const roverModelEntity = viewer.entities.add({
           id: `${target.id}-rover`,
-          name: `${target.name} Surface View`,
-          position: roverSurfacePos,
+          name: `${target.name} 3D Surface Model`,
+          position: roverModelPos,
+          orientation: roverOrientation,
           show: false,
-          billboard: {
-            image: createRoverSprite(target.id),
-            width: 256,
-            height: 256,
-            scaleByDistance: new Cesium.NearFarScalar(1500, 1.0, 35000, 0.25),
-            verticalOrigin: Cesium.VerticalOrigin.CENTER,
-            horizontalOrigin: Cesium.HorizontalOrigin.CENTER,
-            disableDepthTestDistance: Number.POSITIVE_INFINITY,
+          properties: {
+            modelSpec: roverModelSpec,
           },
         });
-        roverMap.set(target.id, roverSpriteEntity);
+        roverMap.set(target.id, roverModelEntity);
         roverCloseState.set(target.id, false);
       } else {
         const surfacePosition = createSurfacePositionProperty(
@@ -2691,6 +3044,29 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     pinEntitiesRef.current = pinMap;
     spacecraftEntitiesRef.current = spacecraftMap;
     roverEntitiesRef.current = roverMap;
+
+    const attachLazy3DModel = (entity: CesiumEntity, spec: SpacecraftModelSpec) => {
+      if (entity.model) return;
+      entity.model = new Cesium.ModelGraphics({
+        uri: spec.uri,
+        scale: spec.scale,
+        minimumPixelSize: spec.minimumPixelSize,
+        maximumScale: spec.maximumScale,
+        runAnimations: true,
+        shadows: Cesium.ShadowMode.DISABLED,
+        incrementallyLoadTextures: true,
+      });
+    };
+
+    attachTargetModelRef.current = (target: MarsTarget) => {
+      if (target.category === 'satellite') {
+        const entity = spacecraftMap.get(target.id);
+        if (entity) attachLazy3DModel(entity, getSatelliteModelSpec(target.id));
+      } else if (target.category === 'rover') {
+        const entity = roverMap.get(target.id);
+        if (entity) attachLazy3DModel(entity, getRoverModelSpec(target.id));
+      }
+    };
 
     // Adaptive marker & polyline vertical clearance so <1 km points hug the surface without floating
     const getCameraHeightMeters = () => {
@@ -2903,7 +3279,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
       },
       label: {
         text: 'START',
-        font: '700 11px "Chakra Petch", sans-serif',
+        font: '700 12px "Chakra Petch", sans-serif',
         fillColor: Cesium.Color.fromCssColorString('#6EE7B7'),
         outlineColor: Cesium.Color.fromCssColorString('#05070B'),
         outlineWidth: 3,
@@ -2937,7 +3313,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
       },
       label: {
         text: 'DEST',
-        font: '700 11px "Chakra Petch", sans-serif',
+        font: '700 12px "Chakra Petch", sans-serif',
         fillColor: Cesium.Color.fromCssColorString('#67E8F9'),
         outlineColor: Cesium.Color.fromCssColorString('#05070B'),
         outlineWidth: 3,
@@ -2995,13 +3371,16 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
         elev0: number;
         elev4: number;
         elev11: number;
+        pickedElevMeters?: number;
       }>,
       fromLat: number,
       fromLon: number,
       toLat: number,
       toLon: number,
       steps: number,
-      skipFirst: boolean
+      skipFirst: boolean,
+      fromPickedElev?: number,
+      toPickedElev?: number
     ) => {
       let dLon = toLon - fromLon;
       if (dLon > 180) dLon -= 360;
@@ -3011,14 +3390,33 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
         const t = i / steps;
         const lat = fromLat + (toLat - fromLat) * t;
         const lon = wrapLongitudeDeg(fromLon + dLon * t);
-        targetSamples.push(sampleClimbingElevations(lat, lon));
+        const pickedElevMeters =
+          i === 0
+            ? fromPickedElev
+            : i === steps
+              ? toPickedElev
+              : undefined;
+        targetSamples.push({
+          ...sampleClimbingElevations(lat, lon),
+          ...(pickedElevMeters !== undefined ? { pickedElevMeters } : {}),
+        });
       }
     };
 
-    const buildSitePolygonRingSamples = (vertices: SitePolygonVertex[], closeLoop = true) => {
+    const buildSitePolygonRingSamples = (
+      vertices: Array<SitePolygonVertex & { pickedElevMeters?: number }>,
+      closeLoop = true
+    ) => {
       if (vertices.length === 0) return [];
       if (vertices.length === 1) {
-        return [sampleClimbingElevations(vertices[0].latDeg, vertices[0].lonDeg)];
+        return [
+          {
+            ...sampleClimbingElevations(vertices[0].latDeg, vertices[0].lonDeg),
+            ...(vertices[0].pickedElevMeters !== undefined
+              ? { pickedElevMeters: vertices[0].pickedElevMeters }
+              : {}),
+          },
+        ];
       }
       const samples: Array<{
         latDeg: number;
@@ -3026,22 +3424,28 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
         elev0: number;
         elev4: number;
         elev11: number;
+        pickedElevMeters?: number;
       }> = [];
       const edgeCount = closeLoop ? vertices.length : vertices.length - 1;
-      const totalStepsBudget = 144;
-      const stepsPerEdge = Math.max(1, Math.min(18, Math.round(totalStepsBudget / Math.max(1, edgeCount))));
 
       for (let i = 0; i < edgeCount; i++) {
         const a = vertices[i];
         const b = vertices[(i + 1) % vertices.length];
+        let dLon = b.lonDeg - a.lonDeg;
+        if (dLon > 180) dLon -= 360;
+        if (dLon < -180) dLon += 360;
+        const degDist = Math.hypot(dLon, b.latDeg - a.latDeg);
+        const steps = Math.max(1, Math.min(24, Math.ceil(degDist / 0.35)));
         appendSegmentRingSamples(
           samples,
           a.latDeg,
           a.lonDeg,
           b.latDeg,
           b.lonDeg,
-          stepsPerEdge,
-          i > 0
+          steps,
+          i > 0,
+          a.pickedElevMeters,
+          b.pickedElevMeters
         );
       }
       return samples;
@@ -3072,19 +3476,8 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
         return;
       }
 
-      const metrics = computePolygonMetricsKm(vertices);
-      const maxSpanMeters = Math.max(100, metrics.perimeterKm * 250);
       const camHeight = getCameraHeightMeters();
-      const approxCellMeters = maxSpanMeters / 18;
-      const cellChordSag =
-        (approxCellMeters * approxCellMeters) / (8 * MARS_CONSTANTS.EQUATORIAL_RADIUS);
-      const fillClearance = Math.max(
-        0.7,
-        Math.min(
-          120,
-          cellChordSag * 1.15 + Math.max(camHeight * 0.00045, approxCellMeters * 0.015)
-        )
-      );
+      const fillClearance = Math.max(0.4, Math.min(6, camHeight * 0.00003));
       const exag = viewer.scene.verticalExaggeration;
 
       const positions = new Float64Array(mesh.vertices.length * 3);
@@ -3197,8 +3590,13 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
         const first = sr.vertices[0];
         if (!first) return Cesium.Cartesian3.fromDegrees(0, 0, 0, marsEllipsoid);
         const camHeight = getCameraHeightMeters();
-        const clearance = Math.max(1.2, computePathClearanceMeters(camHeight, 250) * 1.15);
-        return getExaggeratedSurfacePosition(first.latDeg, first.lonDeg, first.elevMeters, clearance);
+        const clearance = Math.max(0.5, Math.min(8, camHeight * 0.00004));
+        return getExaggeratedSurfacePosition(
+          first.latDeg,
+          first.lonDeg,
+          first.pickedElevMeters ?? first.elevMeters,
+          clearance
+        );
       }, false),
       point: {
         pixelSize: 8,
@@ -3214,10 +3612,16 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
       polyline: {
         positions: new Cesium.CallbackProperty(() => {
           if (sr.ringSamples.length < 2) return [];
-          return buildVisualClimbingPositions(
-            sr.ringSamples,
-            Math.max(sr.ringSpanMeters, 100),
-            1.15
+          const camHeight = getCameraHeightMeters();
+          const clearance = Math.max(0.5, Math.min(8, camHeight * 0.00004));
+          const exag = viewer.scene.verticalExaggeration;
+          return sr.ringSamples.map((s) =>
+            Cesium.Cartesian3.fromDegrees(
+              s.lonDeg,
+              s.latDeg,
+              (s.pickedElevMeters ?? resolveLodClimbElevMeters(s, camHeight)) * exag + clearance,
+              marsEllipsoid
+            )
           );
         }, false),
         arcType: Cesium.ArcType.NONE,
@@ -3324,80 +3728,84 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
       const latDeg = Cesium.Math.toDegrees(carto.latitude);
       const lonDeg = Cesium.Math.toDegrees(carto.longitude);
       const elevMeters = sampleElevationAt(lonDeg, latDeg);
+      const pickedElevMeters = terrainCartesian
+        ? pickedCartographic.height / Math.max(0.001, viewer.scene.verticalExaggeration)
+        : elevMeters;
       const cartesian = getExaggeratedSurfacePosition(
         latDeg,
         lonDeg,
         elevMeters,
         getAdaptiveMarkerOffset(40, 0.4)
       );
-      return { cartesian, carto, latDeg, lonDeg, elevMeters };
+      return { cartesian, carto, latDeg, lonDeg, elevMeters, pickedElevMeters };
     };
 
-    const finalizePencilStroke = () => {
-      if (!sr.isDrawing) return;
-      sr.isDrawing = false;
-      sr.lastScreenPos = null;
-      if (sr.startDotEntity) sr.startDotEntity.show = false;
-      onSiteDrawingChangeRef.current(false);
-      onSiteDrawLivePreviewChangeRef.current(null);
+    const MAX_PENCIL_VERTICES = 1200;
+    const toCanvasPosFromClient = (clientX: number, clientY: number) => {
+      const rect = viewer.scene.canvas.getBoundingClientRect();
+      return {
+        x: clientX - rect.left,
+        y: clientY - rect.top,
+      };
+    };
 
-      const metrics = computePolygonMetricsKm(sr.vertices);
-      if (sr.vertices.length < 3 || (metrics.areaKm2 < 0.0001 && metrics.perimeterKm < 0.05)) {
-        clearSiteSelectionInternal();
-        return;
+    const appendPencilPointAtCanvasPos = (
+      pos: { x: number; y: number },
+      force = false,
+      updateLivePreview = true
+    ): boolean => {
+      if (!siteAnalysisModeRef.current || !sr.isDrawing) return false;
+      if (sr.vertices.length >= MAX_PENCIL_VERTICES) return false;
+      const lastPos = sr.lastScreenPos;
+      if (lastPos) {
+        const dx = pos.x - lastPos.x;
+        const dy = pos.y - lastPos.y;
+        const minStep = force ? 0.5 : 2.0;
+        if (Math.hypot(dx, dy) < minStep) return false;
       }
 
-      const closedVerts = sr.vertices.map(({ latDeg, lonDeg }) => ({ latDeg, lonDeg }));
-      sr.ringSamples = buildSitePolygonRingSamples(closedVerts, true);
-      sr.ringSpanMeters = Math.max(100, metrics.perimeterKm * 1000);
-      rebuildSitePolygonFillPrimitive(closedVerts, getCameraDetailLevel());
-      if (sr.outlineEntity) sr.outlineEntity.show = true;
-      onSitePolygonCompleteRef.current(closedVerts);
-    };
+      const pt = pickMarsSurfacePoint(pos);
+      if (!pt) return false;
+      lastCursorPositionRef.current = pos;
 
-    window.addEventListener('pointerup', finalizePencilStroke);
-    window.addEventListener('pointercancel', finalizePencilStroke);
+      const prev = sr.vertices[sr.vertices.length - 1];
+      sr.vertices.push({
+        latDeg: pt.latDeg,
+        lonDeg: pt.lonDeg,
+        elevMeters: pt.elevMeters,
+        pickedElevMeters: pt.pickedElevMeters,
+      });
+      sr.lastScreenPos = { x: pos.x, y: pos.y };
+      if (prev) {
+        let dLon = pt.lonDeg - prev.lonDeg;
+        if (dLon > 180) dLon -= 360;
+        if (dLon < -180) dLon += 360;
+        const degDist = Math.hypot(dLon, pt.latDeg - prev.latDeg);
+        const segSteps = Math.max(1, Math.min(12, Math.ceil(degDist / 0.35)));
+        appendSegmentRingSamples(
+          sr.ringSamples,
+          prev.latDeg,
+          prev.lonDeg,
+          pt.latDeg,
+          pt.lonDeg,
+          segSteps,
+          true,
+          prev.pickedElevMeters,
+          pt.pickedElevMeters
+        );
+      } else {
+        sr.ringSamples.push({
+          ...sampleClimbingElevations(pt.latDeg, pt.lonDeg),
+          pickedElevMeters: pt.pickedElevMeters,
+        });
+      }
 
-    // Real-time cursor coordinates + live measure preview + Pencil freehand surface drawing.
-    let lastCursorMoveAt = 0;
-    handler.setInputAction((movement: { endPosition: { x: number; y: number } }) => {
-      lastCursorPositionRef.current = movement.endPosition;
-
-      if (siteAnalysisModeRef.current && sr.isDrawing) {
-        const lastPos = sr.lastScreenPos;
-        if (lastPos) {
-          const dx = movement.endPosition.x - lastPos.x;
-          const dy = movement.endPosition.y - lastPos.y;
-          const minStep = sr.vertices.length > 180 ? 14 : 5;
-          if (Math.hypot(dx, dy) < minStep) return;
-        }
-        if (sr.vertices.length >= 240) return;
-
-        const pt = pickMarsSurfacePoint(movement.endPosition);
-        if (!pt) return;
+      if (updateLivePreview) {
         onCursorTelemetryChangeRef.current({
           latDeg: pt.latDeg,
           lonDeg: pt.lonDeg,
           elevationMeters: pt.elevMeters,
         });
-
-        const prev = sr.vertices[sr.vertices.length - 1];
-        sr.vertices.push({ latDeg: pt.latDeg, lonDeg: pt.lonDeg, elevMeters: pt.elevMeters });
-        sr.lastScreenPos = { x: movement.endPosition.x, y: movement.endPosition.y };
-        if (prev) {
-          appendSegmentRingSamples(
-            sr.ringSamples,
-            prev.latDeg,
-            prev.lonDeg,
-            pt.latDeg,
-            pt.lonDeg,
-            4,
-            true
-          );
-        } else {
-          sr.ringSamples.push(sampleClimbingElevations(pt.latDeg, pt.lonDeg));
-        }
-
         const metrics = computePolygonMetricsKm(sr.vertices);
         sr.ringSpanMeters = Math.max(100, metrics.perimeterKm * 1000);
         if (sr.outlineEntity) sr.outlineEntity.show = sr.ringSamples.length >= 2;
@@ -3414,6 +3822,96 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
                 areaKm2: 0,
               }
         );
+      }
+      return true;
+    };
+
+    const syncPencilLivePreview = () => {
+      const lastVert = sr.vertices[sr.vertices.length - 1];
+      if (lastVert) {
+        onCursorTelemetryChangeRef.current({
+          latDeg: lastVert.latDeg,
+          lonDeg: lastVert.lonDeg,
+          elevationMeters: lastVert.elevMeters,
+        });
+      }
+      const metrics = computePolygonMetricsKm(sr.vertices);
+      sr.ringSpanMeters = Math.max(100, metrics.perimeterKm * 1000);
+      if (sr.outlineEntity) sr.outlineEntity.show = sr.ringSamples.length >= 2;
+      onSiteDrawLivePreviewChangeRef.current(
+        sr.vertices.length >= 3
+          ? {
+              pointCount: sr.vertices.length,
+              perimeterKm: metrics.perimeterKm,
+              areaKm2: metrics.areaKm2,
+            }
+          : {
+              pointCount: sr.vertices.length,
+              perimeterKm: 0,
+              areaKm2: 0,
+            }
+      );
+    };
+
+    const handlePencilPointerMove = (e: PointerEvent) => {
+      if (!siteAnalysisModeRef.current || !sr.isDrawing) return;
+      const coalesced =
+        typeof e.getCoalescedEvents === 'function' ? e.getCoalescedEvents() : [];
+      const events = coalesced.length > 0 ? coalesced : [e];
+      let addedAny = false;
+      for (const ev of events) {
+        if (appendPencilPointAtCanvasPos(toCanvasPosFromClient(ev.clientX, ev.clientY), false, false)) {
+          addedAny = true;
+        }
+      }
+      if (addedAny) {
+        syncPencilLivePreview();
+      }
+    };
+
+    const finalizePencilStroke = (finalCanvasPos?: { x: number; y: number }) => {
+      if (!sr.isDrawing) return;
+      if (finalCanvasPos) {
+        appendPencilPointAtCanvasPos(finalCanvasPos, true, false);
+      }
+      sr.isDrawing = false;
+      sr.lastScreenPos = null;
+      if (sr.startDotEntity) sr.startDotEntity.show = false;
+      onSiteDrawingChangeRef.current(false);
+      onSiteDrawLivePreviewChangeRef.current(null);
+
+      const metrics = computePolygonMetricsKm(sr.vertices);
+      if (sr.vertices.length < 3 || (metrics.areaKm2 < 0.0001 && metrics.perimeterKm < 0.05)) {
+        clearSiteSelectionInternal();
+        return;
+      }
+
+      sr.ringSamples = buildSitePolygonRingSamples(sr.vertices, true);
+      sr.ringSpanMeters = Math.max(100, metrics.perimeterKm * 1000);
+      const closedVerts = sr.vertices.map(({ latDeg, lonDeg }) => ({ latDeg, lonDeg }));
+      rebuildSitePolygonFillPrimitive(closedVerts, getCameraDetailLevel());
+      if (sr.outlineEntity) sr.outlineEntity.show = true;
+      onSitePolygonCompleteRef.current(closedVerts);
+    };
+
+    const handleWindowPointerUp = (e: PointerEvent) => {
+      finalizePencilStroke(toCanvasPosFromClient(e.clientX, e.clientY));
+    };
+    const handleWindowPointerCancel = () => {
+      finalizePencilStroke();
+    };
+
+    window.addEventListener('pointermove', handlePencilPointerMove);
+    window.addEventListener('pointerup', handleWindowPointerUp);
+    window.addEventListener('pointercancel', handleWindowPointerCancel);
+
+    // Real-time cursor coordinates + live measure preview + Pencil freehand surface drawing.
+    let lastCursorMoveAt = 0;
+    handler.setInputAction((movement: { endPosition: { x: number; y: number } }) => {
+      lastCursorPositionRef.current = movement.endPosition;
+
+      if (siteAnalysisModeRef.current && sr.isDrawing) {
+        appendPencilPointAtCanvasPos(movement.endPosition, false, true);
         return;
       }
 
@@ -3480,9 +3978,21 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
 
         removeSiteFillPrimitive();
         sr.isDrawing = true;
-        sr.vertices = [{ latDeg: pt.latDeg, lonDeg: pt.lonDeg, elevMeters: pt.elevMeters }];
+        sr.vertices = [
+          {
+            latDeg: pt.latDeg,
+            lonDeg: pt.lonDeg,
+            elevMeters: pt.elevMeters,
+            pickedElevMeters: pt.pickedElevMeters,
+          },
+        ];
         sr.lastScreenPos = { x: press.position.x, y: press.position.y };
-        sr.ringSamples = [sampleClimbingElevations(pt.latDeg, pt.lonDeg)];
+        sr.ringSamples = [
+          {
+            ...sampleClimbingElevations(pt.latDeg, pt.lonDeg),
+            pickedElevMeters: pt.pickedElevMeters,
+          },
+        ];
         sr.ringSpanMeters = 0;
         sr.builtDetailLevel = null;
         if (sr.startDotEntity) sr.startDotEntity.show = true;
@@ -3496,8 +4006,8 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
       }
     }, Cesium.ScreenSpaceEventType.LEFT_DOWN);
 
-    handler.setInputAction(() => {
-      finalizePencilStroke();
+    handler.setInputAction((release: { position?: { x: number; y: number } }) => {
+      finalizePencilStroke(release?.position);
     }, Cesium.ScreenSpaceEventType.LEFT_UP);
 
     const resolvePickedTarget = (entityId: string) => {
@@ -4036,6 +4546,8 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
 
     const scratchLocalUpWC = new Cesium.Cartesian3();
     const scratchLocalUpEC = new Cesium.Cartesian3();
+    const scratchSunVecWC = new Cesium.Cartesian3();
+    const scratchSunVecEC = new Cesium.Cartesian3();
 
     // preUpdate runs right before UniformState updates frame lighting & enforces strict 10 m terrain clearance
     const scratchCenterScreen = new Cesium.Cartesian2();
@@ -4211,6 +4723,9 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
             pin.show = isFront;
 
             if (spacecraftEntity) {
+              if (isFront && isCloseUp) {
+                attachLazy3DModel(spacecraftEntity, getSatelliteModelSpec(target.id));
+              }
               spacecraftEntity.show = isFront && isCloseUp;
             }
 
@@ -4225,15 +4740,15 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
               }
               if (badgeLabel) {
                 badgeLabel.pixelOffset = isCloseUp ? closeLabelOffset : farLabelOffset;
-                badgeLabel.scale = isCloseUp ? 0.85 : 1.0;
+                badgeLabel.scale = 1.0;
               }
             }
           }
         } else if (target.category === 'rover') {
-          const roverSpriteEntity = roverMap.get(target.id);
+          const roverModelEntity = roverMap.get(target.id);
           if (!showRoversRef.current) {
             pin.show = false;
-            if (roverSpriteEntity) roverSpriteEntity.show = false;
+            if (roverModelEntity) roverModelEntity.show = false;
             continue;
           }
           const roverPositionProperty = roverPositions.get(target.id) as any;
@@ -4248,8 +4763,11 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
             pin.show =
               isFront && (isPrimaryOrSelected || distMeters <= SURFACE_SECONDARY_PIN_MAX_DIST_METERS);
 
-            if (roverSpriteEntity) {
-              roverSpriteEntity.show = isFront && isCloseUp;
+            if (roverModelEntity) {
+              if (isFront && isCloseUp) {
+                attachLazy3DModel(roverModelEntity, getRoverModelSpec(target.id));
+              }
+              roverModelEntity.show = isFront && isCloseUp;
             }
 
             if (roverCloseState.get(target.id) !== isCloseUp) {
@@ -4266,7 +4784,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
                   ? Cesium.VerticalOrigin.TOP
                   : Cesium.VerticalOrigin.BOTTOM;
                 badgeLabel.pixelOffset = isCloseUp ? roverCloseLabelOffset : farLabelOffset;
-                badgeLabel.scale = isCloseUp ? 0.9 : 1.0;
+                badgeLabel.scale = 1.0;
               }
             }
           }
@@ -4568,7 +5086,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     // Adaptive quality: sample real frame rate and drop FXAA if we cannot hold 60 FPS.
     let fpsWindowStart = performance.now();
     let fpsFrameCount = 0;
-    let fxaaDisabled = false;
+    let fxaaDisabled = true;
 
     // Keep the loading screen visible for at least 10s and never hide it before the globe's
     // terrain, map tile images, and skybox have loaded and rendered on screen.
@@ -4700,7 +5218,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
       }
 
       const ctxOpacity = getCtxFadeAlpha(camClearanceM);
-      const rockOpacity = getRockDetailFadeAlpha(camClearanceM);
+      const hiriseOpacity = getHiriseFadeAlpha(camClearanceM);
       // Progressively warm and deepen the surface ferric-oxide red tint as we descend from 500 km.
       const surfaceRedT = getSurfaceRedTintProgress(camClearanceM);
       const redTintOpacity = SURFACE_RED_TINT_MAX_ALPHA * surfaceRedT;
@@ -4712,20 +5230,22 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
         );
         applyCtxColorForAltitude(ctxLayerRef.current, camClearanceM);
       }
-      if (ctxLayerRef.current) {
-        ctxLayerRef.current.alpha = ctxOpacity;
-        ctxLayerRef.current.show = mapStyleRef.current === 'optical' && ctxOpacity > 0.003;
+      if (layerTransitionFrameRef.current === null) {
+        if (ctxLayerRef.current) {
+          ctxLayerRef.current.alpha = ctxOpacity;
+          ctxLayerRef.current.show = mapStyleRef.current === 'optical' && ctxOpacity > 0.003;
+        }
+        const showHiriseOptical = mapStyleRef.current === 'optical' && hiriseOpacity > 0.003;
+        for (const hLayer of hiriseLayersRef.current) {
+          hLayer.alpha = mapStyleRef.current === 'optical' ? hiriseOpacity : 0.0;
+          hLayer.show = showHiriseOptical;
+        }
+        if (redTintLayerRef.current) {
+          redTintLayerRef.current.alpha = mapStyleRef.current === 'optical' ? redTintOpacity : 0.0;
+          redTintLayerRef.current.show =
+            mapStyleRef.current === 'optical' && redTintOpacity > 0.003;
+        }
       }
-      if (redTintLayerRef.current) {
-        redTintLayerRef.current.alpha = mapStyleRef.current === 'optical' ? redTintOpacity : 0.0;
-        redTintLayerRef.current.show =
-          mapStyleRef.current === 'optical' && redTintOpacity > 0.003;
-      }
-      if (rockDetailLayerRef.current) {
-        rockDetailLayerRef.current.alpha = rockOpacity;
-        rockDetailLayerRef.current.show = mapStyleRef.current === 'optical' && rockOpacity > 0.003;
-      }
-
       const cloudShell = cloudShellPrimitiveRef.current;
       if (cloudShell) {
         const cloudOpacity = getCloudFadeAlpha(camClearanceM) * cloudModeBlendRef.current;
@@ -4741,63 +5261,72 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
         }
       }
 
-      // True 3D horizon-emerging Martian atmosphere (2x richer scattering, 100% by 100 km -> 0% at 200 km)
-      const atmosphereProgress = Cesium.Math.clamp(
-        (ATMOSPHERE_FADE_OUT_METERS - camClearanceM) /
-          (ATMOSPHERE_FADE_OUT_METERS - ATMOSPHERE_FULL_VISIBLE_METERS),
+      // Delicate orbital whitish limb fade-in (1,500 km -> 220 km) + smooth logarithmic Martian sky emergence (160 km -> 38 km)
+      const orbitalRimProgress = Cesium.Math.clamp(
+        camClearanceM >= ORBITAL_HORIZON_RIM_START_METERS
+          ? 0.0
+          : camClearanceM <= ORBITAL_HORIZON_RIM_FULL_METERS
+            ? 1.0
+            : Math.log(ORBITAL_HORIZON_RIM_START_METERS / Math.max(1, camClearanceM)) /
+              Math.log(ORBITAL_HORIZON_RIM_START_METERS / ORBITAL_HORIZON_RIM_FULL_METERS),
         0.0,
         1.0
       );
-      const atmT = atmosphereProgress * atmosphereProgress * (3.0 - 2.0 * atmosphereProgress);
-      const atmVisible = atmT > 0.002;
+      const orbitalRimT =
+        orbitalRimProgress *
+        orbitalRimProgress *
+        orbitalRimProgress *
+        (orbitalRimProgress * (orbitalRimProgress * 6.0 - 15.0) + 10.0);
+
+      const atmosphereProgress = Cesium.Math.clamp(
+        camClearanceM >= ATMOSPHERE_FADE_OUT_METERS
+          ? 0.0
+          : camClearanceM <= ATMOSPHERE_FULL_VISIBLE_METERS
+            ? 1.0
+            : Math.log(ATMOSPHERE_FADE_OUT_METERS / Math.max(1, camClearanceM)) /
+              Math.log(ATMOSPHERE_FADE_OUT_METERS / ATMOSPHERE_FULL_VISIBLE_METERS),
+        0.0,
+        1.0
+      );
+      const atmT =
+        atmosphereProgress *
+        atmosphereProgress *
+        atmosphereProgress *
+        (atmosphereProgress * (atmosphereProgress * 6.0 - 15.0) + 10.0);
+      const zenithFillT = Math.pow(atmT, 1.85);
 
       const isOpticalMode = mapStyleRef.current === 'optical';
-      const under100Km = camClearanceM < 100_000;
-
-      // Remove starfield & sun below 100 km and replace backdrop with dusky rose / muted amber sky
+      // Keep starfield & sun visible until the sky dome reaches full 100% opacity at zenith (~38 km)
+      const skyFullyCovered = camClearanceM <= ATMOSPHERE_FULL_VISIBLE_METERS;
       if (viewer.scene.skyBox) {
-        viewer.scene.skyBox.show = !under100Km;
+        viewer.scene.skyBox.show = !skyFullyCovered;
       }
       if (viewer.scene.sun) {
-        viewer.scene.sun.show = !under100Km;
+        viewer.scene.sun.show = !skyFullyCovered;
       }
 
       let dayScale = 1.0;
-      if (sunShadowEnabledRef.current && isOpticalMode) {
+      const activeLightDir = (viewer.scene.light as { direction?: unknown } | undefined)?.direction;
+      if (sunShadowEnabledRef.current && isOpticalMode && activeLightDir) {
         marsEllipsoid.geodeticSurfaceNormal(viewer.camera.positionWC, scratchLocalUpWC);
-        const lightDir = (viewer.scene.light as { direction?: unknown } | undefined)?.direction;
-        if (lightDir) {
-          const ndotl = -Cesium.Cartesian3.dot(scratchLocalUpWC, lightDir);
-          const tTerm = Cesium.Math.clamp((ndotl + 0.22) / 0.56, 0.0, 1.0);
-          dayScale = 0.22 + 0.78 * (tTerm * tTerm * (3.0 - 2.0 * tTerm));
-        }
+        const ndotl = -Cesium.Cartesian3.dot(scratchLocalUpWC, activeLightDir);
+        const tTerm = Cesium.Math.clamp((ndotl + 0.22) / 0.56, 0.0, 1.0);
+        dayScale = 0.22 + 0.78 * (tTerm * tTerm * (3.0 - 2.0 * tTerm));
       }
 
+      // Smoothly transition backdrop from black space to dusky rose zenith in lockstep with zenith canopy
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const sceneBg = viewer.scene.backgroundColor as any;
-      if (under100Km) {
-        const bgGain = isOpticalMode ? 0.96 : 0.88;
-        sceneBg.red = 0.55 * bgGain * dayScale;
-        sceneBg.green = 0.39 * bgGain * dayScale;
-        sceneBg.blue = 0.36 * bgGain * dayScale;
-        sceneBg.alpha = 1.0;
-      } else {
-        sceneBg.red = 0.0;
-        sceneBg.green = 0.0;
-        sceneBg.blue = 0.0;
-        sceneBg.alpha = 1.0;
-      }
-
-      const below100Intensity = under100Km
-        ? Math.pow(1.0 - Cesium.Math.clamp(camClearanceM / 100_000, 0.0, 1.0), 0.7)
-        : 0.0;
+      const bgGain = (isOpticalMode ? 0.96 : 0.88) * dayScale * zenithFillT;
+      sceneBg.red = 0.55 * bgGain;
+      sceneBg.green = 0.39 * bgGain;
+      sceneBg.blue = 0.36 * bgGain;
+      sceneBg.alpha = 1.0;
 
       const horizonShell = horizonAtmospherePrimitiveRef.current;
       if (horizonShell) {
-        const near100Blend = 1.0 - Cesium.Math.clamp((camClearanceM - 100_000) / 38_000, 0.0, 1.0);
-        const orbitalScale = isOpticalMode ? 1.0 : 0.4;
-        const modeScale = lerp(orbitalScale, 1.0, near100Blend);
-        const shellOpacity = atmT * modeScale;
+        const orbitalOpacity = isOpticalMode ? orbitalRimT * 0.84 : 0.0;
+        const shellOpacity = lerp(orbitalOpacity, 1.0, Math.min(1.0, atmT * 1.15));
         const showShell = shellOpacity > 0.002;
         horizonShell.show = showShell;
         if (showShell) {
@@ -4810,11 +5339,29 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
               scratchLocalUpEC
             );
             Cesium.Cartesian3.normalize(scratchLocalUpEC, uniforms.u_localUpEC);
+            if (activeLightDir) {
+              Cesium.Cartesian3.negate(activeLightDir, scratchSunVecWC);
+              Cesium.Matrix4.multiplyByPointAsVector(
+                viewer.camera.viewMatrix,
+                scratchSunVecWC,
+                scratchSunVecEC
+              );
+              Cesium.Cartesian3.normalize(scratchSunVecEC, uniforms.u_sunDirEC);
+            }
             const rLocal = MARS_CONSTANTS.EQUATORIAL_RADIUS;
+            const rShell = rLocal + ATMOSPHERE_SHELL_ALTITUDE_METERS;
             const rCam = rLocal + Math.max(0, camClearanceM);
             const ratio = rLocal / rCam;
+            const horizonAngle = Math.asin(-Math.sqrt(Math.max(0, 1 - ratio * ratio)));
+            const orbitalMaxElevRad =
+              rCam > rShell
+                ? Math.asin(-Math.sqrt(Math.max(0, 1 - (rShell / rCam) * (rShell / rCam)))) -
+                  horizonAngle
+                : Math.PI * 0.5;
             uniforms.u_horizonCos = -Math.sqrt(Math.max(0, 1 - ratio * ratio));
             uniforms.u_camAltitudeKm = camClearanceM / 1000;
+            uniforms.u_atmRiseT = atmT;
+            uniforms.u_orbitalMaxElevRad = Math.max(0.04, orbitalMaxElevRad);
             uniforms.u_opacity = shellOpacity;
             uniforms.u_shadowEnabled =
               sunShadowEnabledRef.current && isOpticalMode ? 1.0 : 0.0;
@@ -4824,74 +5371,59 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
         }
       }
 
-      const targetHueShift = -0.052;
-      const targetSaturationShift = 0.04;
-      const targetBrightnessShift = isOpticalMode ? 0.19 : 0.05;
-      // Fade Cesium's built-in per-vertex GroundAtmosphere/SkyAtmosphere out below 110 km so its
-      // zero-blue scattering coefficients never paint a 1px yellow scaly rim along the horizon.
-      const orbitalGroundAtmT = Cesium.Math.clamp((camClearanceM - 60_000) / 50_000, 0.0, 1.0);
-      const showCesiumAtm = atmVisible && orbitalGroundAtmT > 0.01;
-      const targetSkyLightIntensity = (isOpticalMode ? 58.0 : 48.0) * atmT * orbitalGroundAtmT;
-      const targetGlobeLightIntensity = (isOpticalMode ? 29.0 : 24.0) * atmT * orbitalGroundAtmT;
+      // Keep Cesium's native SkyAtmosphere and GroundAtmosphere strictly off at all altitudes
+      // so no extra outer yellow/olive ring appears in space (e.g. around 170 km).
       const skyAtmosphere = viewer.scene.skyAtmosphere;
-      if (skyAtmosphere) {
-        if (skyAtmosphere.show !== showCesiumAtm) {
-          skyAtmosphere.show = showCesiumAtm;
-        }
-        if (
-          Math.abs(skyAtmosphere.hueShift - targetHueShift) > 0.001 ||
-          Math.abs(skyAtmosphere.saturationShift - targetSaturationShift) > 0.001 ||
-          Math.abs(skyAtmosphere.brightnessShift - targetBrightnessShift) > 0.001 ||
-          Math.abs((skyAtmosphere.atmosphereLightIntensity ?? 0) - targetSkyLightIntensity) > 0.05
-        ) {
-          skyAtmosphere.hueShift = targetHueShift;
-          skyAtmosphere.saturationShift = targetSaturationShift;
-          skyAtmosphere.brightnessShift = targetBrightnessShift;
-          skyAtmosphere.atmosphereLightIntensity = targetSkyLightIntensity;
-        }
+      if (skyAtmosphere && skyAtmosphere.show) {
+        skyAtmosphere.show = false;
       }
-      if (viewer.scene.globe.showGroundAtmosphere !== showCesiumAtm) {
-        viewer.scene.globe.showGroundAtmosphere = showCesiumAtm;
-      }
-      if (
-        Math.abs((viewer.scene.globe.atmosphereHueShift ?? 0.0) - targetHueShift) > 0.001 ||
-        Math.abs((viewer.scene.globe.atmosphereSaturationShift ?? 0.0) - targetSaturationShift) > 0.001 ||
-        Math.abs((viewer.scene.globe.atmosphereBrightnessShift ?? 0.0) - targetBrightnessShift) > 0.001 ||
-        Math.abs(viewer.scene.globe.atmosphereLightIntensity - targetGlobeLightIntensity) > 0.05
-      ) {
-        viewer.scene.globe.atmosphereHueShift = targetHueShift;
-        viewer.scene.globe.atmosphereSaturationShift = targetSaturationShift;
-        viewer.scene.globe.atmosphereBrightnessShift = targetBrightnessShift;
-        viewer.scene.globe.atmosphereLightIntensity = targetGlobeLightIntensity;
+      if (viewer.scene.globe.showGroundAtmosphere) {
+        viewer.scene.globe.showGroundAtmosphere = false;
       }
       if (viewer.scene.fog && viewer.scene.fog.enabled) {
         viewer.scene.fog.enabled = false;
       }
 
-      // Distance-based horizon fading (< 100 km, Optical mode only) + smooth horizon silhouette AA across modes
+      // Distance & limb-angle horizon haze (Optical only):
+      // 1,500 km -> 160 km: creamy milky-white horizon haze rising toward the limb (ppp.jfif)
+      // 160 km -> 38 km: warms smoothly into sandy-peach Martian surface horizon haze
       const horizonFadeStage = horizonSoftenerStageRef.current;
       if (horizonFadeStage) {
         horizonFadeStage.enabled = true;
-        if (isOpticalMode && under100Km && below100Intensity > 0.002) {
-          horizonFadeStage.uniforms.u_fadeIntensity = below100Intensity * 0.52;
+        if (isOpticalMode && (orbitalRimT > 0.002 || atmT > 0.002)) {
+          const orbitalIntensity = orbitalRimT * 0.86;
+          const surfaceIntensity = 0.52;
+          horizonFadeStage.uniforms.u_fadeIntensity = lerp(orbitalIntensity, surfaceIntensity, atmT);
           const hSafe = Math.max(10, camClearanceM);
           horizonFadeStage.uniforms.u_horizonDistM = Math.sqrt(
             2 * MARS_CONSTANTS.EQUATORIAL_RADIUS * hSafe + hSafe * hSafe
           );
-          const horizonGain = 1.02 + below100Intensity * 0.06;
-          const midR = 0.89 * Math.min(1.0, horizonGain * 0.96);
-          const midG = 0.77 * Math.min(1.0, horizonGain * 0.96);
-          const midB = 0.65 * Math.min(1.0, horizonGain * 0.96);
-          horizonFadeStage.uniforms.u_midFadeColor.x = Math.min(0.98, midR * dayScale);
-          horizonFadeStage.uniforms.u_midFadeColor.y = Math.min(0.95, midG * dayScale);
-          horizonFadeStage.uniforms.u_midFadeColor.z = Math.min(0.90, midB * dayScale);
+          horizonFadeStage.uniforms.u_hazeStart = lerp(0.36, 0.18, atmT);
+          horizonFadeStage.uniforms.u_atmRiseT = atmT;
+          horizonFadeStage.uniforms.u_shadowEnabled = sunShadowEnabledRef.current ? 1.0 : 0.0;
 
-          const farR = 0.95 * horizonGain;
-          const farG = 0.89 * horizonGain;
-          const farB = 0.80 * horizonGain;
-          horizonFadeStage.uniforms.u_farFadeColor.x = Math.min(0.99, farR * dayScale);
-          horizonFadeStage.uniforms.u_farFadeColor.y = Math.min(0.99, farG * dayScale);
-          horizonFadeStage.uniforms.u_farFadeColor.z = Math.min(0.99, farB * dayScale);
+          const whiteMidR = 0.91;
+          const whiteMidG = 0.88;
+          const whiteMidB = 0.87;
+          const whiteFarR = 0.97;
+          const whiteFarG = 0.96;
+          const whiteFarB = 0.97;
+
+          const horizonGain = 1.02 + atmT * 0.06;
+          const warmMidR = Math.min(0.98, 0.89 * Math.min(1.0, horizonGain * 0.96) * dayScale);
+          const warmMidG = Math.min(0.95, 0.77 * Math.min(1.0, horizonGain * 0.96) * dayScale);
+          const warmMidB = Math.min(0.90, 0.65 * Math.min(1.0, horizonGain * 0.96) * dayScale);
+          const warmFarR = Math.min(0.99, 0.95 * horizonGain * dayScale);
+          const warmFarG = Math.min(0.99, 0.89 * horizonGain * dayScale);
+          const warmFarB = Math.min(0.99, 0.80 * horizonGain * dayScale);
+
+          horizonFadeStage.uniforms.u_midFadeColor.x = lerp(whiteMidR, warmMidR, atmT);
+          horizonFadeStage.uniforms.u_midFadeColor.y = lerp(whiteMidG, warmMidG, atmT);
+          horizonFadeStage.uniforms.u_midFadeColor.z = lerp(whiteMidB, warmMidB, atmT);
+
+          horizonFadeStage.uniforms.u_farFadeColor.x = lerp(whiteFarR, warmFarR, atmT);
+          horizonFadeStage.uniforms.u_farFadeColor.y = lerp(whiteFarG, warmFarG, atmT);
+          horizonFadeStage.uniforms.u_farFadeColor.z = lerp(whiteFarB, warmFarB, atmT);
         } else {
           horizonFadeStage.uniforms.u_fadeIntensity = 0.0;
         }
@@ -5095,8 +5627,9 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
         window.cancelAnimationFrame(layerTransitionFrameRef.current);
         layerTransitionFrameRef.current = null;
       }
-      window.removeEventListener('pointerup', finalizePencilStroke);
-      window.removeEventListener('pointercancel', finalizePencilStroke);
+      window.removeEventListener('pointermove', handlePencilPointerMove);
+      window.removeEventListener('pointerup', handleWindowPointerUp);
+      window.removeEventListener('pointercancel', handleWindowPointerCancel);
       container.removeEventListener('wheel', handleContainerWheel);
       canvas.removeEventListener('webglcontextlost', handleContextLost);
       canvas.removeEventListener('webglcontextrestored', handleContextRestored);
@@ -5104,6 +5637,8 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
       handler.destroy();
       unbindVikingErr();
       unbindCtxErr();
+      for (const unbind of unbindHiriseErrs) unbind();
+      hiriseLayersRef.current = [];
       unbindShadeErr();
       removeSiteFillPrimitive();
       if (horizonSoftenerStageRef.current && !viewer.isDestroyed()) {
@@ -5133,8 +5668,8 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
     if (!isReady) return;
     const opticalLayer = vikingLayerRef.current;
     const ctxLayer = ctxLayerRef.current;
+    const hiriseLayers = hiriseLayersRef.current;
     const redTintLayer = redTintLayerRef.current;
-    const rockDetailLayer = rockDetailLayerRef.current;
     const reliefShadeLayer = reliefShadeLayerRef.current;
     const temperatureLayer = temperatureLayerRef.current;
     const radiationLayer = radiationLayerRef.current;
@@ -5167,21 +5702,21 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
       }
       layers.push({ layer: opticalLayer, targetAlpha: isOpticalBase ? 1.0 : 0.0 });
     }
-    if (ctxLayer || redTintLayer || rockDetailLayer) {
+    if (ctxLayer || hiriseLayers.length > 0 || redTintLayer) {
       if (ctxLayer) {
         const ctxOpacity = getCtxFadeAlpha(camHeight);
         layers.push({ layer: ctxLayer, targetAlpha: mapStyle === 'optical' ? ctxOpacity : 0.0 });
       }
+      const hiriseOpacity = getHiriseFadeAlpha(camHeight);
+      for (const hLayer of hiriseLayers) {
+        layers.push({
+          layer: hLayer,
+          targetAlpha: mapStyle === 'optical' ? hiriseOpacity : 0.0,
+        });
+      }
       if (redTintLayer) {
         const redOpacity = SURFACE_RED_TINT_MAX_ALPHA * getSurfaceRedTintProgress(camHeight);
         layers.push({ layer: redTintLayer, targetAlpha: mapStyle === 'optical' ? redOpacity : 0.0 });
-      }
-      if (rockDetailLayer) {
-        const rockOpacity = getRockDetailFadeAlpha(camHeight);
-        layers.push({
-          layer: rockDetailLayer,
-          targetAlpha: mapStyle === 'optical' ? rockOpacity : 0.0,
-        });
       }
     }
 
@@ -5594,7 +6129,7 @@ export const MarsGlobe = forwardRef<MarsGlobeHandle, MarsGlobeProps>(function Ma
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-black z-[100]">
           <div className="relative w-full h-full max-w-full max-h-full flex items-center justify-center overflow-hidden">
             <img
-              src="data:image/webp;base64,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"
+              src="/assets/aistudio/image__1__b4f438d3.jpg"
               alt="Mars"
               className="absolute inset-0 w-full h-full object-cover object-center"
             />
